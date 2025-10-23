@@ -1,0 +1,13 @@
+pandas>=1.5.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+seaborn>=0.11.0
+yfinance>=0.1.87
+fyers-apiv3>=3.1.7
+pytz>=2022.1
+pyyaml>=6.0
+websocket-client>=1.6.0
+requests>=2.28.0
+python-dateutil>=2.8.0
+pyotp>=2.6.0  # Optional: For TOTP authentication
+openpyxl>=3.0.10

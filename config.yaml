@@ -1,0 +1,90 @@
+data:
+  cache_enabled: true
+  historical_days: 5
+  max_retries: 3
+  retry_delay: 1
+  timeframe: '5'
+fyers:
+  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCby1aV3BFVUxPMXNxdnJVZkhBR2RTemZ4OTZaSUJTS0dwOERoby0xWEVMWmJtT0lrbnVxSXRaMTV5eXNYbV9aUnJDWWdpX0NkMzdvRWR3RVJ2ZkNyeHFKT204NmFwczVPWVprOUs3dDBsYV84UXg5Zz0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiIyZTUwMTJhYmIzYTRhYWRkYjM3MDllNzNjYTQyNzgyNDY4ZjMwZmVlMGRlZTFhZjRmNDhkNTQyMSIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWU0wNDA3NyIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzYxMjY1ODAwLCJpYXQiOjE3NjExODcyNDEsImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc2MTE4NzI0MSwic3ViIjoiYWNjZXNzX3Rva2VuIn0.nO0Hkt64U6S0FK76ROSQ1LuEA1yC4ReZNfA9cNJJL4M
+  client_id: QZAWYQ69KZ-100
+  redirect_uri: https://trade.fyers.in/api-login/redirect-uri/index.html
+  secret_key: J02WG5J3V9
+  token_expiry: '2025-10-24 08:10:41'
+  totp_key: ''
+logging:
+  file: logs/strategy.log
+  level: INFO
+market_holidays:
+- '2024-01-26'
+- '2024-03-08'
+- '2024-03-29'
+- '2024-05-01'
+- '2024-08-15'
+- '2024-10-02'
+- '2024-11-01'
+- '2024-11-15'
+monitoring:
+  max_daily_loss: -5000
+  max_daily_trades: 10
+  track_daily_pnl: true
+simulation:
+  enabled: false
+  initial_balance: 100000
+strategy:
+  analysis_time: 09:20
+  banknifty_options_enabled: true
+  banknifty_qty: 1
+  banknifty_symbol: NSE:NIFTYBANK-INDEX
+  breakout_buffer: 5
+  breakout_pct: 10
+  compensate_with_nifty: true
+  enable_websocket: true
+  max_entry_premium_pct: 5
+  max_holding_minutes: 30
+  max_strike_distance: 500
+  min_premium_threshold: 50.0
+  nifty_compensation_qty: 2
+  nifty_qty: 1
+  nifty_symbol: NSE:NIFTY50-INDEX
+  partial_exits:
+  - exit_percentage: 30
+    min_profit_pct: 8
+    time_minutes: 10
+  - exit_percentage: 40
+    min_profit_pct: 12
+    time_minutes: 20
+  risk_reward_ratio: 2
+  sl_points: 15
+  stoploss_pct: 20
+  symbol: NSE:NIFTY50-INDEX
+  target_points: 30
+  trailing_stop_pct: 8
+  trailing_trigger_pct: 12
+  use_trailing_stop: true
+  wait_for_market_open: true
+timing:
+  first_candle_end_time: 09:20
+  market_open_time: 09:15
+  trading_end_time: '15:30'
+trading:
+  entry_filters:
+    momentum_confirmation: true
+    momentum_periods: 3
+    volume_confirmation: true
+    volume_periods: 5
+    volume_threshold: 1.2
+  symbols:
+    banknifty:
+      enabled: true
+      index_symbol: NSE:NIFTYBANK-INDEX
+      quantity: 15
+      step_size: 100
+    nifty:
+      enabled: true
+      index_symbol: NSE:NIFTY50-INDEX
+      quantity: 25
+      step_size: 50
+websocket:
+  ping_interval: 30
+  reconnect_attempts: 5
+  reconnect_delay: 2

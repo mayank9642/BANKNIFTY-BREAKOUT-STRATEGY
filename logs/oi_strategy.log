@@ -1,0 +1,19 @@
+INFO:OI_STRATEGY:Starting OI Strategy for NIFTY...
+INFO:root:Authenticating with Fyers API...
+INFO:root:Fyers API authentication successful.
+INFO:root:Fetching option chain for NSE:NIFTY50-INDEX...
+INFO:OI_STRATEGY:Fetched NIFTY spot price: {'ask': 0, 'bid': 0, 'chp': -0.34, 'ch': -86.5, 'description': 'NSE:NIFTY50-INDEX', 'exchange': 'NSE', 'fyToken': '101000000026000', 'high_price': 25310.35, 'low_price': 25115.55, 'lp': 25140.85, 'open_price': 25277.55, 'original_name': 'NSE:NIFTY50-INDEX', 'prev_close_price': 25227.35, 'short_name': 'NIFTY50-INDEX', 'spread': 0, 'symbol': 'NSE:NIFTY50-INDEX', 'tt': '1760400000', 'volume': 0, 'atp': 0}
+INFO:OI_STRATEGY:Selected CE: None (strike None, expiry None), PE: None (strike None, expiry None) with premium >= 50.0
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
+INFO:OI_STRATEGY:CE LTP: None, PE LTP: None
