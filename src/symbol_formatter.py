@@ -260,11 +260,8 @@ def generate_option_symbol(underlying: str, expiry_date: datetime.date, strike: 
     Returns:
         str: Properly formatted option symbol
     """
-    # Format expiry for Fyers: DDMMMYY (e.g., 24OCT25)
-    # Format expiry for Fyers: DDMMM (e.g., 25OCT)
-    day = expiry_date.strftime('%d')
-    month = expiry_date.strftime('%b').upper()
-    expiry_str = f"{day}{month}"
+    # Format expiry for Fyers: YY + MON (e.g., 25NOV for Nov 2025)
+    expiry_str = expiry_date.strftime('%y') + expiry_date.strftime('%b').upper()
     return f"NSE:{underlying}{expiry_str}{strike}{option_type.upper()}"
 
 def test_symbol_formatter():

@@ -105,11 +105,63 @@ class Breakout5MinStrategy:
         return None
 
     def get_atm_option_symbol(self, spot, option_type, index_name):
-        # Always use next Thursday for BANKNIFTY weekly expiry
-        strike = round(spot / 100) * 100
-        # Use expiry as 25-Oct-2025 (Thursday of expiry week)
-        expiry_date = datetime(2025, 10, 25)
-        return generate_option_symbol('BANKNIFTY', expiry_date.date(), int(strike), option_type)
+        """Generate ATM option symbol with proper expiry selection (BANKNIFTY: Fyers option chain only)"""
+        try:
+            # Check if BANKNIFTY options are enabled
+            if 'BANK' in index_name.upper():
+                banknifty_options_enabled = self.config.get('strategy', {}).get('banknifty_options_enabled', False)
+                if not banknifty_options_enabled:
+                    self.log_info(f"BANKNIFTY options not enabled in config - skipping {option_type} for {index_name}")
+                    return None
+            # Calculate step size and ATM strike
+            step = 100 if 'BANK' in index_name.upper() else 50
+            strike = round(spot / step) * step
+            today = datetime.now(self.ist)
+            if 'BANK' in index_name.upper():
+                # BANKNIFTY: Always use next available expiry from Fyers option chain
+                from src.banknifty_symbol_helper import get_next_banknifty_expiry, get_banknifty_option_symbol
+                expiry_date = get_next_banknifty_expiry(today)
+                self.log_info(f"[DEBUG] Selected BANKNIFTY expiry date: {expiry_date}")
+                underlying = 'BANKNIFTY'
+                try:
+                    symbol = get_banknifty_option_symbol(int(strike), option_type, expiry_date.date())
+                    self.log_info(f"Selected BANKNIFTY {option_type} symbol from Fyers option chain: {symbol}")
+                    return symbol
+                except Exception as e:
+                    self.log_info(f"[ERROR] BANKNIFTY option chain lookup failed: {e}")
+                    # Fallback to formatter if option chain fails
+                    from src.symbol_formatter import generate_option_symbol
+                    symbol = generate_option_symbol(underlying, expiry_date.date(), int(strike), option_type)
+                    self.log_info(f"Fallback BANKNIFTY symbol: {symbol}")
+                    return symbol
+            else:
+                # NIFTY: Weekly options expire on Thursday
+                target_weekday = 3  # Thursday
+                days_to_expiry = (target_weekday - today.weekday()) % 7
+                if days_to_expiry == 0:  # Today is Thursday
+                    if today.hour > 15 or (today.hour == 15 and today.minute >= 30):
+                        days_to_expiry = 7  # Next Thursday after market close
+                expiry_date = today + timedelta(days=days_to_expiry)
+            # For NIFTY, use Fyers option chain to get exact symbol
+            from src.nifty_symbol_helper import get_nifty_atm_option_symbol
+            try:
+                symbol = get_nifty_atm_option_symbol(spot, expiry_date.strftime('%d-%m-%Y'), option_type)
+                if symbol:
+                    self.log_info(f"Selected NIFTY {option_type} symbol from Fyers option chain: {symbol}")
+                    return symbol
+                else:
+                    self.log_info(f"[ERROR] NIFTY option chain lookup failed, falling back to formatter.")
+                    symbol = generate_option_symbol('NIFTY', expiry_date.date(), int(strike), option_type)
+                    self.log_info(f"Fallback NIFTY symbol: {symbol}")
+                    return symbol
+            except Exception as e:
+                self.log_info(f"[ERROR] NIFTY option chain lookup exception: {e}")
+                symbol = generate_option_symbol('NIFTY', expiry_date.date(), int(strike), option_type)
+                self.log_info(f"Fallback NIFTY symbol: {symbol}")
+                return symbol
+        except Exception as e:
+            self.log_info(f"[ERROR] Failed to generate option symbol: {e}")
+            return None
 
     def get_ltp(self, symbol):
         # Use Fyers API utility for LTP
@@ -385,138 +437,6 @@ if __name__ == '__main__':
     args = parser.parse_args()
     strategy = Breakout5MinStrategy(simulation=args.simulate, paper_trading=args.paper)
     strategy.run()
-    def monitor_option_high_breakout(self, ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name):
-        self.log_info(f"Monitoring CE {ce_symbol} for breakout above high+buffer {ce_breakout}")
-        self.log_info(f"Monitoring PE {pe_symbol} for breakout above high+buffer {pe_breakout}")
-        symbols_to_subscribe = [ce_symbol, pe_symbol]
-        if not self.simulation or self.paper_trading:
-            self.setup_websocket(symbols_to_subscribe)
-        breakout_taken = False
-        start_time = time.time()
-        max_monitor_time = 60 * 60  # 1 hour max
-        while not breakout_taken and (time.time() - start_time < max_monitor_time):
-            for opt_symbol, breakout_level, opt_type in [
-                (ce_symbol, ce_breakout, 'CE'),
-                (pe_symbol, pe_breakout, 'PE')
-            ]:
-                if self.simulation and not self.paper_trading:
-                    ltp = breakout_level  # Simulate immediate breakout
-                else:
-                    ltp = self.live_prices.get(opt_symbol) or self.get_ltp(opt_symbol)
-                if ltp is not None and ltp > breakout_level:
-                    self.log_info(f"*** BREAKOUT DETECTED! {opt_type} option {opt_symbol} ***")
-                    self.log_info(f"   Current LTP: {ltp} | Breakout Level: {breakout_level}")
-                    self.log_info(f"   Executing BUY order for {qty} lots...")
-                    self.execute_trade(opt_symbol, ltp, qty, 'BUY', index_name)
-                    breakout_taken = True
-                    break
-                else:
-                    if int(time.time()) % 30 == 0:
-                        if ltp is not None:
-                            self.log_info(f"Monitoring: {opt_type} {ltp:.2f} | Need > {breakout_level:.2f} | Gap: {(breakout_level - ltp):.2f}")
-            time.sleep(0.5)
-        if not breakout_taken:
-            self.log_info(f"No breakout detected for CE or PE option within monitoring window.")
-
-    # ...existing code for all other methods (fetch_5min_candle, fetch_option_ohlc, get_atm_option_symbol, get_ltp, setup_websocket, execute_trade, manage_position, log_trade, wait_for_market_open, wait_until_920, etc.)...
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--simulate', action='store_true', help='Run in simulation mode (dummy data)')
-    parser.add_argument('--paper', action='store_true', help='Run in paper trading mode (real data, no real trades)')
-    args = parser.parse_args()
-    strategy = Breakout5MinStrategy(simulation=args.simulate, paper_trading=args.paper)
-    strategy.run()
-    def run(self):
-        self.log_info('Starting 5-min breakout strategy (no OI logic).')
-        should_wait = self.config.get('strategy', {}).get('wait_for_market_open', True)
-        if should_wait:
-            if self.simulation:
-                self.log_info('Simulation mode is active, but still waiting for market to open as configured')
-            self.wait_for_market_open()
-        if not (hasattr(self, 'skip_time_rule') and self.skip_time_rule):
-            self.wait_until_920()
-        threads = []
-        t = threading.Thread(target=self.monitor_index, args=(self.banknifty_symbol, self.banknifty_qty, 'BANKNIFTY'), daemon=True)
-        t.start()
-        threads.append(t)
-        for t in threads:
-            t.join()
-
-    def monitor_index(self, symbol, qty, index_name):
-        candle = self.fetch_5min_candle(symbol)
-        if not candle:
-            self.log_info(f"Could not fetch 5-min candle for {symbol}. Skipping.")
-            return
-        open_, high, low, close, candle_time = candle
-        if hasattr(self, 'skip_time_rule') and self.skip_time_rule:
-            self.log_info(f"[USER] Using custom 5-min OHLC for {symbol} (late start): O={open_}, H={high}, L={low}, C={close}, Window={candle_time}")
-        else:
-            self.log_info(f"{symbol} 9:20 OHLC: O={open_}, H={high}, L={low}, C={close}")
-        if self.simulation and not self.paper_trading:
-            spot = close
-            self.log_info(f"[SIMULATION] Using dummy spot price for {index_name}: {spot}")
-        else:
-            try:
-                spot = self.get_ltp(symbol)
-                if spot is not None and spot > 0:
-                    self.log_info(f"Fetched {index_name} spot price at 9:20: {spot}")
-                else:
-                    self.log_info(f"[ERROR] Could not fetch {index_name} spot price at 9:20. Using close of 5-min candle: {close}")
-                    spot = close
-            except Exception as e:
-                self.log_info(f"[ERROR] Exception fetching {index_name} spot price: {e}. Using close of 5-min candle: {close}")
-                spot = close
-        ce_symbol = self.get_atm_option_symbol(high, 'CE', index_name)
-        pe_symbol = self.get_atm_option_symbol(low, 'PE', index_name)
-        self.log_info(f"Strike selection: CE based on High ({high}) = {ce_symbol}")
-        self.log_info(f"Strike selection: PE based on Low ({low}) = {pe_symbol}")
-        ce_ohlc = self.fetch_option_ohlc(ce_symbol)
-        pe_ohlc = self.fetch_option_ohlc(pe_symbol)
-        if not ce_ohlc or not pe_ohlc:
-            self.log_info(f"[ERROR] Could not fetch valid option OHLCs for {ce_symbol} or {pe_symbol}. Skipping.")
-            return
-        ce_high = ce_ohlc[1]  # High of CE option 5-min candle
-        pe_high = pe_ohlc[1]  # High of PE option 5-min candle
-        ce_breakout = ce_high + self.breakout_buffer
-        pe_breakout = pe_high + self.breakout_buffer
-        self.log_info(f"Option 5-min highs: CE {ce_high}, PE {pe_high}, Breakout levels: CE {ce_breakout}, PE {pe_breakout}")
-        self.monitor_option_high_breakout(ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name)
-
-    def monitor_option_high_breakout(self, ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name):
-        self.log_info(f"Monitoring CE {ce_symbol} for breakout above high+buffer {ce_breakout}")
-        self.log_info(f"Monitoring PE {pe_symbol} for breakout above high+buffer {pe_breakout}")
-        symbols_to_subscribe = [ce_symbol, pe_symbol]
-        if not self.simulation or self.paper_trading:
-            self.setup_websocket(symbols_to_subscribe)
-        breakout_taken = False
-        start_time = time.time()
-        max_monitor_time = 60 * 60  # 1 hour max
-        while not breakout_taken and (time.time() - start_time < max_monitor_time):
-            for opt_symbol, breakout_level, opt_type in [
-                (ce_symbol, ce_breakout, 'CE'),
-                (pe_symbol, pe_breakout, 'PE')
-            ]:
-                if self.simulation and not self.paper_trading:
-                    ltp = breakout_level  # Simulate immediate breakout
-                else:
-                    ltp = self.live_prices.get(opt_symbol) or self.get_ltp(opt_symbol)
-                if ltp is not None and ltp > breakout_level:
-                    self.log_info(f"*** BREAKOUT DETECTED! {opt_type} option {opt_symbol} ***")
-                    self.log_info(f"   Current LTP: {ltp} | Breakout Level: {breakout_level}")
-                    self.log_info(f"   Executing BUY order for {qty} lots...")
-                    self.execute_trade(opt_symbol, ltp, qty, 'BUY', index_name)
-                    breakout_taken = True
-                    break
-                else:
-                    if int(time.time()) % 30 == 0:
-                        if ltp is not None:
-                            self.log_info(f"Monitoring: {opt_type} {ltp:.2f} | Need > {breakout_level:.2f} | Gap: {(breakout_level - ltp):.2f}")
-            time.sleep(0.5)
-        if not breakout_taken:
-            self.log_info(f"No breakout detected for CE or PE option within monitoring window.")
-    # ...existing code...
 
     def wait_for_market_open(self):
         now = datetime.now(self.ist)
@@ -724,9 +644,23 @@ if __name__ == '__main__':
             today = datetime.now(self.ist)
             
             if 'BANK' in index_name.upper():
-                # BANKNIFTY: Monthly options expire on last Thursday (Oct 28, 2025)
-                # Using monthly expiry since weekly options are not available
-                expiry_date = datetime(2025, 10, 28, tzinfo=self.ist)  # Oct 28, 2025
+                # BANKNIFTY: Always use next available expiry from Fyers option chain
+                from src.banknifty_symbol_helper import get_next_banknifty_expiry, get_banknifty_option_symbol
+                expiry_date = get_next_banknifty_expiry(today)
+                self.log_info(f"[DEBUG] Selected BANKNIFTY expiry date: {expiry_date}")
+                underlying = 'BANKNIFTY'
+                strike = round(spot / 100) * 100
+                try:
+                    symbol = get_banknifty_option_symbol(int(strike), option_type, expiry_date.date())
+                    self.log_info(f"Selected BANKNIFTY {option_type} symbol from Fyers option chain: {symbol}")
+                    return symbol
+                except Exception as e:
+                    self.log_info(f"[ERROR] BANKNIFTY option chain lookup failed: {e}")
+                    # Fallback to formatter if option chain fails
+                    from src.symbol_formatter import generate_option_symbol
+                    symbol = generate_option_symbol(underlying, expiry_date.date(), int(strike), option_type)
+                    self.log_info(f"Fallback BANKNIFTY symbol: {symbol}")
+                    return symbol
             else:
                 # NIFTY: Weekly options expire on Thursday  
                 target_weekday = 3  # Thursday
@@ -741,25 +675,7 @@ if __name__ == '__main__':
                 else:
                     expiry_date = today + timedelta(days=days_to_expiry)
             
-            # Determine underlying name
-            if 'BANK' in index_name.upper():
-                underlying = 'BANKNIFTY'
-            else:
-                underlying = 'NIFTY'
-            
-            # For BANKNIFTY, use Fyers option chain to get exact symbol
-            if underlying == 'BANKNIFTY':
-                from src.banknifty_symbol_helper import get_banknifty_option_symbol
-                try:
-                    symbol = get_banknifty_option_symbol(int(strike), option_type, expiry_date.date())
-                    self.log_info(f"Selected BANKNIFTY {option_type} symbol from Fyers option chain: {symbol}")
-                    return symbol
-                except Exception as e:
-                    self.log_info(f"[ERROR] BANKNIFTY option chain lookup failed: {e}")
-                    # Fallback to formatter if option chain fails
-                    symbol = generate_option_symbol(underlying, expiry_date.date(), int(strike), option_type)
-                    self.log_info(f"Fallback BANKNIFTY symbol: {symbol}")
-                    return symbol
+            # ...existing code for NIFTY only...
             # For NIFTY, use Fyers option chain to get exact symbol
             from src.nifty_symbol_helper import get_nifty_atm_option_symbol
             try:
