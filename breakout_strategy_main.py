@@ -272,9 +272,13 @@ class Breakout5MinStrategy:
         while (time.time() - start_time) < max_holding_minutes * 60:
             ltp = self.get_ltp(symbol)
             if ltp is None:
-                self.log_info(f"[MONITOR] Could not fetch LTP for {symbol}. Skipping this check.")
-                time.sleep(5)
-                continue
+                # SL and target: <500 = 10%, >=500 = 7%
+                if entry_price < 500:
+                    sl = entry_price * 0.90
+                    target = entry_price * 1.10
+                else:
+                    sl = entry_price * 0.93
+                    target = entry_price * 1.07
             pnl = (ltp - entry_price) * quantity
             maxup = max(maxup, pnl)
             maxdown = min(maxdown, pnl)
