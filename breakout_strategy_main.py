@@ -48,8 +48,7 @@ class Breakout5MinStrategy:
         self.ist = pytz.timezone('Asia/Kolkata')
         self.banknifty_symbol = self.config.get('strategy', {}).get('banknifty_symbol', 'NSE:NIFTYBANK-INDEX')
         self.banknifty_qty = self.config.get('strategy', {}).get('banknifty_qty', 35)
-        self.sl_points = self.config.get('strategy', {}).get('sl_points', 15)
-        self.target_points = self.config.get('strategy', {}).get('target_points', 30)
+    # self.sl_points and self.target_points are deprecated; use % of premium instead
         self.breakout_buffer = self.config.get('strategy', {}).get('breakout_buffer', 5)
         self.log_file = 'logs/trade_history.csv'
         self.live_prices = {}
@@ -255,8 +254,9 @@ class Breakout5MinStrategy:
         if not os.path.exists('logs'):
             os.makedirs('logs')
         quantity = lots * 35
-        sl = entry_price - self.sl_points
-        target = entry_price + self.target_points
+    # SL and target are now 10% of entry price (premium)
+    sl = entry_price * 0.90
+    target = entry_price * 1.10
         entry_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
         self.log_info(f"Trade ENTRY: {side} {symbol} - {lots} lots ({quantity} qty) at {entry_price} | Time: {entry_time}")
         self.log_info(f"   Stop Loss: {sl} | Target: {target}")
@@ -266,7 +266,7 @@ class Breakout5MinStrategy:
         start_time = time.time()
         maxup = float('-inf')
         maxdown = float('inf')
-        trailing_sl = sl
+    trailing_sl = sl
         exit_reason = None
         exit_price = None
         while (time.time() - start_time) < max_holding_minutes * 60:
@@ -279,9 +279,9 @@ class Breakout5MinStrategy:
             maxup = max(maxup, pnl)
             maxdown = min(maxdown, pnl)
             maxup_pct = (maxup / (entry_price * quantity)) * 100 if entry_price and quantity else 0
-            # Example trailing SL logic: move up trailing SL if price moves up by target_points
-            if ltp > entry_price + self.target_points:
-                trailing_sl = max(trailing_sl, ltp - self.sl_points)
+            # Example trailing SL logic: move up trailing SL if price moves up by 10% from entry
+            if ltp > entry_price * 1.10:
+                trailing_sl = max(trailing_sl, ltp * 0.90)
             # Log every second to the main log file for live monitoring
             self.log_info(f"[TRADE STATUS] Symbol: {symbol} | Entry: {entry_price} | LTP: {ltp} | SL: {sl} | Trailing SL: {trailing_sl} | Target: {target} | PnL: {pnl} | MaxUp: {maxup} | MaxUp(%): {maxup_pct:.2f} | MaxDown: {maxdown}")
             # (no per-update Excel writes anymore)
