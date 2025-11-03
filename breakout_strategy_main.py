@@ -254,9 +254,13 @@ class Breakout5MinStrategy:
         if not os.path.exists('logs'):
             os.makedirs('logs')
         quantity = lots * 35
-    # SL and target are now 10% of entry price (premium)
-    sl = entry_price * 0.90
-    target = entry_price * 1.10
+        # SL and target: <500 = 10%, >=500 = 7%
+        if entry_price < 500:
+            sl = entry_price * 0.90
+            target = entry_price * 1.10
+        else:
+            sl = entry_price * 0.93
+            target = entry_price * 1.07
         entry_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
         self.log_info(f"Trade ENTRY: {side} {symbol} - {lots} lots ({quantity} qty) at {entry_price} | Time: {entry_time}")
         self.log_info(f"   Stop Loss: {sl} | Target: {target}")
@@ -266,7 +270,7 @@ class Breakout5MinStrategy:
         start_time = time.time()
         maxup = float('-inf')
         maxdown = float('inf')
-    trailing_sl = sl
+        trailing_sl = sl
         exit_reason = None
         exit_price = None
         while (time.time() - start_time) < max_holding_minutes * 60:
