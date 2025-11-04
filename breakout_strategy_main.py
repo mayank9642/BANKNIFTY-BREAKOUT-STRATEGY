@@ -261,12 +261,12 @@ class Breakout5MinStrategy:
         else:
             sl = entry_price * 0.93
             target = entry_price * 1.07
-    entry_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
-    self.log_info(f"Trade ENTRY: {side} {symbol} - {lots} lots ({quantity} qty) at {entry_price} | Time: {entry_time}")
-    self.log_info(f"   Stop Loss: {sl} | Target: {target}")
-    self.log_trade(symbol, entry_price, quantity, side, 'ENTRY', entry_time)
-    brokerage = 0  # Placeholder, update if brokerage calculation is available
-    margin_required = 0  # Placeholder, update if margin calculation is available
+        entry_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
+        self.log_info(f"Trade ENTRY: {side} {symbol} - {lots} lots ({quantity} qty) at {entry_price} | Time: {entry_time}")
+        self.log_info(f"   Stop Loss: {sl} | Target: {target}")
+        self.log_trade(symbol, entry_price, quantity, side, 'ENTRY', entry_time)
+        brokerage = 50  # Fixed brokerage per trade (buy+sell)
+        margin_required = entry_price * quantity  # Entry price * quantity
         # Continuous trade monitoring loop
         max_holding_minutes = self.config.get('strategy', {}).get('max_holding_minutes', 30)
         start_time = time.time()
