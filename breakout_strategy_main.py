@@ -249,7 +249,7 @@ class Breakout5MinStrategy:
         excel_file = 'logs/trade_status_history.xlsx'
         csv_file = 'logs/trade_status_history.csv'
         status_columns = [
-            'Time', 'Symbol', 'Entry', 'LTP', 'SL', 'Trailing SL', 'Target', 'PnL', 'MaxUp (₹)', 'MaxUp (%)', 'MaxDown (₹)'
+            'Entry DateTime', 'Index', 'Symbol', 'Direction', 'Entry Price', 'Exit DateTime', 'Exit Price', 'Stop Loss', 'Target', 'Trailing SL', 'Quantity', 'Brokerage', 'P&L', 'Margin Required', '% Gain/Loss', 'max up', 'max down', 'max up %', 'max down %'
         ]
         if not os.path.exists('logs'):
             os.makedirs('logs')
@@ -261,10 +261,12 @@ class Breakout5MinStrategy:
         else:
             sl = entry_price * 0.93
             target = entry_price * 1.07
-        entry_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
-        self.log_info(f"Trade ENTRY: {side} {symbol} - {lots} lots ({quantity} qty) at {entry_price} | Time: {entry_time}")
-        self.log_info(f"   Stop Loss: {sl} | Target: {target}")
-        self.log_trade(symbol, entry_price, quantity, side, 'ENTRY', entry_time)
+    entry_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
+    self.log_info(f"Trade ENTRY: {side} {symbol} - {lots} lots ({quantity} qty) at {entry_price} | Time: {entry_time}")
+    self.log_info(f"   Stop Loss: {sl} | Target: {target}")
+    self.log_trade(symbol, entry_price, quantity, side, 'ENTRY', entry_time)
+    brokerage = 0  # Placeholder, update if brokerage calculation is available
+    margin_required = 0  # Placeholder, update if margin calculation is available
         # Continuous trade monitoring loop
         max_holding_minutes = self.config.get('strategy', {}).get('max_holding_minutes', 30)
         start_time = time.time()
@@ -287,9 +289,14 @@ class Breakout5MinStrategy:
             maxup = max(maxup, pnl)
             maxdown = min(maxdown, pnl)
             maxup_pct = (maxup / (entry_price * quantity)) * 100 if entry_price and quantity else 0
+            maxdown_pct = (maxdown / (entry_price * quantity)) * 100 if entry_price and quantity else 0
             # Example trailing SL logic: move up trailing SL if price moves up by 10% from entry
-            if ltp > entry_price * 1.10:
-                trailing_sl = max(trailing_sl, ltp * 0.90)
+            if entry_price < 500:
+                if ltp > entry_price * 1.10:
+                    trailing_sl = max(trailing_sl, ltp * 0.90)
+            else:
+                if ltp > entry_price * 1.07:
+                    trailing_sl = max(trailing_sl, ltp * 0.93)
             # Log every second to the main log file for live monitoring
             self.log_info(f"[TRADE STATUS] Symbol: {symbol} | Entry: {entry_price} | LTP: {ltp} | SL: {sl} | Trailing SL: {trailing_sl} | Target: {target} | PnL: {pnl} | MaxUp: {maxup} | MaxUp(%): {maxup_pct:.2f} | MaxDown: {maxdown}")
             # (no per-update Excel writes anymore)
@@ -311,7 +318,12 @@ class Breakout5MinStrategy:
             final_ltp = exit_price
             final_pnl = (final_ltp - entry_price) * quantity if final_ltp is not None else None
             final_maxup_pct = (maxup / (entry_price * quantity) * 100) if entry_price and quantity else 0
-            final_row = [exit_time, symbol, entry_price, final_ltp, sl, trailing_sl, target, final_pnl, maxup, final_maxup_pct, maxdown]
+            final_maxdown_pct = (maxdown / (entry_price * quantity) * 100) if entry_price and quantity else 0
+            final_row = [
+                entry_time, index_name, symbol, side, entry_price, exit_time, final_ltp, sl, target, trailing_sl, quantity,
+                brokerage, final_pnl, margin_required, final_pnl / (margin_required or 1) * 100 if margin_required else '',
+                maxup, maxdown, final_maxup_pct, final_maxdown_pct
+            ]
             # Append and write with Excel formatting
             self._append_final_row_with_format(excel_file, csv_file, final_row, status_columns)
             # Also append to CSV (create header if not exists)
