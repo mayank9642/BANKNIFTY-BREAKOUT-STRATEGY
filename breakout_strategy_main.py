@@ -380,85 +380,52 @@ class Breakout5MinStrategy:
         """
         import pandas as pd
         import csv
-        try:
-            # Read existing Excel if available, else create DataFrame
-            if os.path.exists(excel_file):
-                df = pd.read_excel(excel_file)
-                df.loc[len(df)] = final_row
-            else:
-                df = pd.DataFrame([final_row], columns=columns)
-            # Write to Excel first (pandas -> openpyxl)
-            df.to_excel(excel_file, index=False)
-            # If openpyxl is available, apply formatting
+        import os
+        # Always start with a fresh file each run
+        if os.path.exists(excel_file):
+            os.remove(excel_file)
+        if os.path.exists(csv_file):
+            os.remove(csv_file)
+        # Round all values to 2 decimals if float
+        def round2(val):
             try:
-                from openpyxl import load_workbook
-                from openpyxl.utils import get_column_letter
-                from openpyxl.styles import Font, numbers
-                wb = load_workbook(excel_file)
-                ws = wb.active
-                # Bold headers
-                header_font = Font(bold=True)
-                for col_idx, col in enumerate(columns, start=1):
-                    cell = ws[f"{get_column_letter(col_idx)}1"]
-                    cell.font = header_font
-                # Apply number formats for numeric columns (Entry,LTP,SL,Trailing SL,Target,PnL,MaxUp,MaxUp(%),MaxDown)
-                # Use Indian currency format for rupee columns and percent format for MaxUp (%)
-                # Currency format example: ₹#,##0.00 (Excel may not display the currency symbol on systems without locale support,
-                # but the number_format will still format numbers with thousand separators and two decimals.)
-                currency_format = '₹#,##0.00'
-                num_format = '#,##0.00'
-                pct_format = '0.00%'
-                col_map = {name: idx+1 for idx, name in enumerate(columns)}
-                # Money columns: Entry, LTP, SL, Trailing SL, Target, PnL, MaxUp (₹), MaxDown (₹)
-                numeric_cols = ['Entry', 'LTP', 'SL', 'Trailing SL', 'Target', 'PnL', 'MaxUp (₹)', 'MaxDown (₹)']
-                pct_cols = ['MaxUp (%)']
-                for name in numeric_cols:
-                    if name in col_map:
-                        col_letter = get_column_letter(col_map[name])
-                        for r in range(2, ws.max_row+1):
-                            try:
-                                # Use currency format for PnL/rupee columns, generic number format for others
-                                if name in ('PnL', 'MaxUp (₹)', 'MaxDown (₹)'):
-                                    ws[f"{col_letter}{r}"].number_format = currency_format
-                                else:
-                                    ws[f"{col_letter}{r}"].number_format = num_format
-                            except Exception:
-                                pass
-                for name in pct_cols:
-                    if name in col_map:
-                        col_letter = get_column_letter(col_map[name])
-                        for r in range(2, ws.max_row+1):
-                            try:
-                                ws[f"{col_letter}{r}"].number_format = pct_format
-                            except Exception:
-                                pass
-                # Auto-width columns
-                for col in ws.columns:
-                    max_length = 0
-                    col_letter = get_column_letter(col[0].column)
-                    for cell in col:
-                        try:
-                            val = str(cell.value) if cell.value is not None else ''
-                            if len(val) > max_length:
-                                max_length = len(val)
-                        except Exception:
-                            pass
-                    adjusted_width = (max_length + 2)
-                    ws.column_dimensions[col_letter].width = adjusted_width
-                wb.save(excel_file)
-            except Exception as e:
-                self.log_info(f"[WARN] Could not apply Excel formatting: {e}")
+                return round(float(val), 2)
+            except Exception:
+                return val
+        final_row_rounded = [round2(x) for x in final_row]
+        # Write to Excel with headers, auto-width, freeze top row
+        try:
+            import openpyxl
+            from openpyxl import Workbook
+            wb = Workbook()
+            ws = wb.active
+            ws.append(columns)
+            ws.append(final_row_rounded)
+            # Bold headers
+            from openpyxl.styles import Font
+            header_font = Font(bold=True)
+            for col_idx in range(1, len(columns)+1):
+                ws.cell(row=1, column=col_idx).font = header_font
+            # Auto-width columns
+            for col in ws.columns:
+                max_length = 0
+                col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                for cell in col:
+                    val = str(cell.value) if cell.value is not None else ''
+                    if len(val) > max_length:
+                        max_length = len(val)
+                ws.column_dimensions[col_letter].width = max_length + 2
+            # Freeze top row
+            ws.freeze_panes = ws['A2']
+            wb.save(excel_file)
         except Exception as e:
             self.log_info(f"[ERROR] Failed to write Excel file {excel_file}: {e}")
-
-        # Append to CSV (create header if not exists)
+        # Write to CSV with headers
         try:
-            write_header = not os.path.exists(csv_file)
-            with open(csv_file, 'a', newline='') as cf:
+            with open(csv_file, 'w', newline='') as cf:
                 writer = csv.writer(cf)
-                if write_header:
-                    writer.writerow(columns)
-                writer.writerow([str(x) if x is not None else '' for x in final_row])
+                writer.writerow(columns)
+                writer.writerow([str(x) if x is not None else '' for x in final_row_rounded])
         except Exception as e:
             self.log_info(f"[ERROR] Failed to write CSV file {csv_file}: {e}")
 
