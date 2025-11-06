@@ -381,11 +381,7 @@ class Breakout5MinStrategy:
         import pandas as pd
         import csv
         import os
-        # Always start with a fresh file each run
-        if os.path.exists(excel_file):
-            os.remove(excel_file)
-        if os.path.exists(csv_file):
-            os.remove(csv_file)
+        # Append trades to existing files, add headers only if new
         # Round all values to 2 decimals if float
         def round2(val):
             try:
@@ -393,13 +389,20 @@ class Breakout5MinStrategy:
             except Exception:
                 return val
         final_row_rounded = [round2(x) for x in final_row]
-        # Write to Excel with headers, auto-width, freeze top row
+        # Write to Excel (append mode, add headers only if new)
         try:
             import openpyxl
-            from openpyxl import Workbook
-            wb = Workbook()
-            ws = wb.active
-            ws.append(columns)
+            from openpyxl import load_workbook, Workbook
+            if os.path.exists(excel_file):
+                wb = load_workbook(excel_file)
+                ws = wb.active
+                # If file is empty, add headers
+                if ws.max_row == 0:
+                    ws.append(columns)
+            else:
+                wb = Workbook()
+                ws = wb.active
+                ws.append(columns)
             ws.append(final_row_rounded)
             # Bold headers
             from openpyxl.styles import Font
@@ -420,11 +423,13 @@ class Breakout5MinStrategy:
             wb.save(excel_file)
         except Exception as e:
             self.log_info(f"[ERROR] Failed to write Excel file {excel_file}: {e}")
-        # Write to CSV with headers
+        # Write to CSV (append mode, add headers only if new)
         try:
-            with open(csv_file, 'w', newline='') as cf:
+            file_exists = os.path.exists(csv_file)
+            with open(csv_file, 'a', newline='') as cf:
                 writer = csv.writer(cf)
-                writer.writerow(columns)
+                if not file_exists or os.stat(csv_file).st_size == 0:
+                    writer.writerow(columns)
                 writer.writerow([str(x) if x is not None else '' for x in final_row_rounded])
         except Exception as e:
             self.log_info(f"[ERROR] Failed to write CSV file {csv_file}: {e}")
