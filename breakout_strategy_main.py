@@ -40,6 +40,10 @@ root_logger.addHandler(console_handler)
 
 class Breakout5MinStrategy:
     def __init__(self, simulation=False, paper_trading=False):
+        # ...existing code...
+        self.trade_executed_today = False
+        self.trade_date = None
+    def __init__(self, simulation=False, paper_trading=False):
         self.simulation = simulation
         self.paper_trading = paper_trading
         self.config = load_config()
@@ -233,6 +237,15 @@ class Breakout5MinStrategy:
             self.log_info(f"[ERROR] Exception in monitoring loop: {e}")
 
     def execute_trade(self, symbol, entry_price, lots, side, index_name):
+        # Check daily trade limit
+        today_str = datetime.now(self.ist).strftime('%Y-%m-%d')
+        if self.trade_date != today_str:
+            self.trade_executed_today = False
+            self.trade_date = today_str
+        if self.trade_executed_today:
+            self.log_info(f"[LIMIT] Trade already executed today. Stopping strategy.")
+            raise SystemExit("Trade limit reached for today. Exiting.")
+    self.trade_executed_today = True
         import pandas as pd
         import os
         import csv
