@@ -2,6 +2,7 @@
 import time
 import logging
 import os
+import shutil
 import pytz
 import threading
 from datetime import datetime, timedelta
@@ -25,6 +26,21 @@ class ISTFormatter(logging.Formatter):
 
 os.makedirs('logs', exist_ok=True)
 log_file = 'logs/strategy.log'
+def archive_strategy_log():
+    if os.path.exists(log_file) and os.path.getsize(log_file) > 0:
+        dt_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        archive_name = f"logs/strategy_{dt_str}.log"
+        shutil.copy2(log_file, archive_name)
+        # Clear log file safely to avoid null entries
+        open(log_file, 'w').close()
+        # Remove and recreate file handler to avoid writing to a corrupted file
+        root_logger = logging.getLogger()
+        for handler in root_logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler) and handler.baseFilename == os.path.abspath(log_file):
+                root_logger.removeHandler(handler)
+        file_handler = logging.FileHandler(log_file, mode='a')
+        file_handler.setFormatter(ISTFormatter(fmt='%(levelname)s - %(message)s'))
+        root_logger.addHandler(file_handler)
 log_fmt = '%(levelname)s - %(message)s'
 ist_formatter = ISTFormatter(fmt=log_fmt)
 root_logger = logging.getLogger()
@@ -40,10 +56,6 @@ root_logger.addHandler(console_handler)
 
 class Breakout5MinStrategy:
     def __init__(self, simulation=False, paper_trading=False):
-        # ...existing code...
-        self.trade_executed_today = False
-        self.trade_date = None
-    def __init__(self, simulation=False, paper_trading=False):
         self.simulation = simulation
         self.paper_trading = paper_trading
         self.config = load_config()
@@ -52,18 +64,20 @@ class Breakout5MinStrategy:
         self.ist = pytz.timezone('Asia/Kolkata')
         self.banknifty_symbol = self.config.get('strategy', {}).get('banknifty_symbol', 'NSE:NIFTYBANK-INDEX')
         self.banknifty_qty = self.config.get('strategy', {}).get('banknifty_qty', 35)
-    # self.sl_points and self.target_points are deprecated; use % of premium instead
         self.breakout_buffer = self.config.get('strategy', {}).get('breakout_buffer', 5)
         self.log_file = 'logs/trade_history.csv'
         self.live_prices = {}
         self.data_socket = None
         # Initialize DataFetcher if we have a Fyers client (used for live or paper runs)
         self.data_fetcher = DataFetcher(self.fyers) if self.fyers is not None else None
+        self.trade_executed_today = False
+        self.trade_date = None
 
     def log_info(self, msg):
         self.logger.info(msg)
 
     def run(self):
+        archive_strategy_log()
         self.log_info('Starting 5-min breakout strategy (BANKNIFTY).')
         self.wait_for_market_open()
         self.wait_until_920()
@@ -190,10 +204,10 @@ class Breakout5MinStrategy:
         pe_ohlc = self.fetch_option_ohlc(pe_symbol)
         if not ce_ohlc or not pe_ohlc:
             return
-        ce_high = ce_ohlc[1]
-        pe_high = pe_ohlc[1]
-        ce_breakout = ce_high + self.breakout_buffer
-        pe_breakout = pe_high + self.breakout_buffer
+    ce_high = ce_ohlc[1]
+    pe_high = pe_ohlc[1]
+    ce_breakout = ce_high + 2
+    pe_breakout = pe_high + 2
         self.log_info(f"Monitoring CE {ce_symbol} for breakout above {ce_breakout}")
         self.log_info(f"Monitoring PE {pe_symbol} for breakout above {pe_breakout}")
         self.monitor_option_high_breakout(ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name)
@@ -229,7 +243,7 @@ class Breakout5MinStrategy:
                         else:
                             self.log_info(f"Monitoring: {opt_type} {opt_symbol} LTP: None | Need > {breakout_level:.2f}")
                 if breakout_taken:
-                    break
+                        break
                 time.sleep(0.5)
             if not breakout_taken:
                 self.log_info(f"No breakout detected for CE or PE option within monitoring window.")
@@ -245,7 +259,7 @@ class Breakout5MinStrategy:
         if self.trade_executed_today:
             self.log_info(f"[LIMIT] Trade already executed today. Stopping strategy.")
             raise SystemExit("Trade limit reached for today. Exiting.")
-    self.trade_executed_today = True
+        self.trade_executed_today = True
         import pandas as pd
         import os
         import csv
@@ -347,6 +361,9 @@ class Breakout5MinStrategy:
                     writer.writerow(status_columns)
                 # Ensure values are serializable
                 writer.writerow([str(x) if x is not None else '' for x in final_row])
+            # Stop strategy completely after trade exit
+            self.log_info("Trade completed. Stopping strategy.")
+            raise SystemExit("Trade completed. Exiting.")
         else:
             # Max holding period exit
             exit_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
@@ -367,6 +384,9 @@ class Breakout5MinStrategy:
                 if write_header:
                     writer.writerow(status_columns)
                 writer.writerow([str(x) if x is not None else '' for x in final_row])
+            # Stop strategy completely after max holding exit
+            self.log_info("Trade completed (max holding). Stopping strategy.")
+            raise SystemExit("Trade completed. Exiting.")
 
     def log_trade(self, symbol, price, qty, side, reason, time_str):
         row = f'{time_str},{symbol},{side},{price},{qty},{reason}\n'
