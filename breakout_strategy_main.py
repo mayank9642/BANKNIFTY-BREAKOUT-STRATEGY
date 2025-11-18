@@ -138,7 +138,6 @@ class Breakout5MinStrategy:
                 # BANKNIFTY: Always use next available expiry from Fyers option chain
                 from src.banknifty_symbol_helper import get_next_banknifty_expiry, get_banknifty_option_symbol
                 expiry_date = get_next_banknifty_expiry(today)
-                self.log_info(f"[DEBUG] Selected BANKNIFTY expiry date: {expiry_date}")
                 underlying = 'BANKNIFTY'
                 try:
                     symbol = get_banknifty_option_symbol(int(strike), option_type, expiry_date.date())
@@ -204,10 +203,10 @@ class Breakout5MinStrategy:
         pe_ohlc = self.fetch_option_ohlc(pe_symbol)
         if not ce_ohlc or not pe_ohlc:
             return
-    ce_high = ce_ohlc[1]
-    pe_high = pe_ohlc[1]
-    ce_breakout = ce_high + 2
-    pe_breakout = pe_high + 2
+        ce_high = ce_ohlc[1]
+        pe_high = pe_ohlc[1]
+        ce_breakout = ce_high + 2
+        pe_breakout = pe_high + 2
         self.log_info(f"Monitoring CE {ce_symbol} for breakout above {ce_breakout}")
         self.log_info(f"Monitoring PE {pe_symbol} for breakout above {pe_breakout}")
         self.monitor_option_high_breakout(ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name)
@@ -325,7 +324,7 @@ class Breakout5MinStrategy:
                 if ltp > entry_price * 1.07:
                     trailing_sl = max(trailing_sl, ltp * 0.93)
             # Log every second to the main log file for live monitoring
-            self.log_info(f"[TRADE STATUS] Symbol: {symbol} | Entry: {entry_price} | LTP: {ltp} | SL: {sl} | Trailing SL: {trailing_sl} | Target: {target} | PnL: {pnl} | MaxUp: {maxup} | MaxUp(%): {maxup_pct:.2f} | MaxDown: {maxdown}")
+            self.log_info(f"[TRADE STATUS] Symbol: {symbol} | Entry: {entry_price:.2f} | LTP: {ltp:.2f} | SL: {sl:.2f} | Trailing SL: {trailing_sl:.2f} | Target: {target:.2f} | PnL: {pnl:.2f} | MaxUp: {maxup:.2f} | MaxUp(%): {maxup_pct:.2f} | MaxDown: {maxdown:.2f}")
             # (no per-update Excel writes anymore)
             if ltp <= trailing_sl:
                 exit_reason = 'STOPLOSS'
@@ -672,7 +671,6 @@ if __name__ == '__main__':
                 # BANKNIFTY: Always use next available expiry from Fyers option chain
                 from src.banknifty_symbol_helper import get_next_banknifty_expiry, get_banknifty_option_symbol
                 expiry_date = get_next_banknifty_expiry(today)
-                self.log_info(f"[DEBUG] Selected BANKNIFTY expiry date: {expiry_date}")
                 underlying = 'BANKNIFTY'
                 strike = round(spot / 100) * 100
                 try:
