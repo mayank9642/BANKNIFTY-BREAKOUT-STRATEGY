@@ -5,15 +5,17 @@ data:
   retry_delay: 1
   timeframe: '5'
 fyers:
-  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCcEJDM1NacVZFVmFaa1J4eDB1MjV4STZTNW1nbmlhaXZBbmsyZ3VRdVRYQmlua3UyY3ppU1poZk9xQTFEeE8wT3d0cDRDTGFuVkdTMzlVaGlNOHNnWVV3Um1LdkR5SW1uOUJoY2FGcExRd01zTUx0dz0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiIxOWE4YjExNzE3ZDEzNmQxYjRiMWJhMjkzYjk0MDc0ZjA3ODAzZTI2NDM2MTRjODJlZDBhYzQyZiIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWU0wNDA3NyIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzYxOTU3MDAwLCJpYXQiOjE3NjE4ODE1NTQsImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc2MTg4MTU1NCwic3ViIjoiYWNjZXNzX3Rva2VuIn0.3KczHMfIdFb1ckysshKmxnI4Big7QWBLtC704uS-6qY
+  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCcExrbWxZN2dIa2FGMHlBN3lucHoyQUo2UDhZQUxuUnJqd1ZTN1ItVW9Ybmh3R2N2azItRGVyUmFOOVlWeTd2Sk1IZ2FvbDZLNEZwekFoRUhBVnlOdkgxdHcyQ3RvZXhyZC11TmRGYlFUc1cxR28wbz0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI2Y2M3MDAwOWM1YzdlOGMzN2U4YTQ3OTdkMThlMGRjMjgwZTJmM2ZkZjgzZWM2ZDA2MmZkNDRlYiIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWU0wNDA3NyIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzY0NzIxODAwLCJpYXQiOjE3NjQ2NDExODksImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc2NDY0MTE4OSwic3ViIjoiYWNjZXNzX3Rva2VuIn0.cebcUgUtFgAm65l7qiEWlFY6l0kj-oh_8KejXxt1jP0
   client_id: QZAWYQ69KZ-100
   redirect_uri: https://trade.fyers.in/api-login/redirect-uri/index.html
   secret_key: J02WG5J3V9
-  token_expiry: '2025-11-01 09:02:35'
+  token_expiry: '2025-12-03 07:36:29'
   totp_key: ''
 logging:
-  file: logs/strategy.log
+  console_output: true
   level: INFO
+  log_file: logs/strategy.log
+  log_trades: true
 market_holidays:
 - '2024-01-26'
 - '2024-03-08'
@@ -28,7 +30,7 @@ monitoring:
   max_daily_trades: 10
   track_daily_pnl: true
 simulation:
-  enabled: false
+  enabled: true
   initial_balance: 100000
 strategy:
   analysis_time: 09:20
@@ -36,10 +38,12 @@ strategy:
   banknifty_qty: 1
   banknifty_symbol: NSE:NIFTYBANK-INDEX
   breakout_buffer: 5
+  breakout_buffer_points: 2
   breakout_pct: 10
   compensate_with_nifty: true
   enable_websocket: true
-  max_entry_premium_pct: 5
+  max_entry_points_above_breakout: 3
+  max_entry_premium_pct: 1
   max_holding_minutes: 30
   max_strike_distance: 500
   min_premium_threshold: 50.0
@@ -61,11 +65,15 @@ strategy:
   trailing_stop_pct: 8
   trailing_trigger_pct: 12
   use_trailing_stop: true
+  vix_log_csv: logs/vix_levels.csv
+  vix_logging_enabled: true
+  vix_symbol: NSE:INDIAVIX-INDEX
   wait_for_market_open: true
 timing:
   first_candle_end_time: 09:20
   market_open_time: 09:15
   trading_end_time: '15:30'
+  wait_for_market_open: false
 trading:
   entry_filters:
     momentum_confirmation: true
@@ -73,17 +81,42 @@ trading:
     volume_confirmation: true
     volume_periods: 5
     volume_threshold: 1.2
+  partial_exits:
+    enabled: false
+    exits: []
+  risk_management:
+    atr_multiplier: 2
+    atr_periods: 14
+    breakout_buffer: 2
+    max_entry_premium_pct: 15
+    max_holding_period_minutes: 90
+    min_premium_threshold: 20
+    stop_loss_points: 20
+    stoploss_pct: 20
+    target_pct: 40
+    target_points: 40
+    use_atr_stop_loss: false
   symbols:
     banknifty:
       enabled: true
+      first_candle:
+        close: 59784.9
+        high: 59784.9
+        low: 59598.95
+        open: 59598.95
+      fixed_expiry: '2025-12-30'
       index_symbol: NSE:NIFTYBANK-INDEX
       quantity: 15
       step_size: 100
     nifty:
-      enabled: true
+      enabled: false
       index_symbol: NSE:NIFTY50-INDEX
       quantity: 25
       step_size: 50
+  trailing_stop:
+    enabled: false
+    trail_pct: 5
+    trigger_pct: 10
 websocket:
   ping_interval: 30
   reconnect_attempts: 5
