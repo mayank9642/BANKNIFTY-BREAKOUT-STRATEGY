@@ -1,0 +1,39 @@
+# Python virtual environments
+.venv/
+venv/
+ENV/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Logs
+logs/*.log
+fyersApi.log
+fyersRequests.log
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local config or tokens
+*.env
+*.local
+access.txt
+
+# Data outputs
+*.xlsx
+# Keep CSV history files tracked except generic temp; ignore large temp CSVs
+logs/*_history.csv
+!logs/trade_history.csv
+!logs/trade_status_history.csv
+# VIX levels should be tracked for analysis
+!logs/vix_levels.csv
+
+# Cache
+.cache/
+**/__pycache__/
