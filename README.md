@@ -2,6 +2,39 @@
 
 A sophisticated algorithmic trading system designed for trading NIFTY and BANKNIFTY options on the Indian stock market. The strategy leverages the first 5-minute candle pattern to identify potential breakout opportunities with comprehensive risk management.
 
+## India VIX snapshot at 09:20
+
+The strategy records an India VIX snapshot at 09:20 IST to help assess market choppiness on the day.
+
+- Config keys:
+  - `vix_logging_enabled`: set to true to enable logging
+  - `vix_symbol`: VIX instrument (default `NSE:INDIAVIX-INDEX`)
+  - `vix_log_csv`: where to append snapshots (default `logs/vix_levels.csv`)
+- Output: appends a CSV row with timestamp and VIX LTP.
+
+## Post-entry monitoring (paper mode)
+
+After a CE/PE entry fills in paper trading, the monitor tracks:
+
+- Live PnL against Stop Loss and Target
+- Trailing behavior (if configured)
+- Max favorable (max up) and max adverse (max down) PnL, with percents
+- Summary prints at exit include these metrics
+
+## Entry slippage tuning
+
+To reduce entry slippage on breakouts, configure a small breakout buffer. This uses a limit price slightly above/below the breakout level so entries are more controlled.
+
+- `strategy.breakout_buffer_points`: suggested values 0.05–0.25 depending on liquidity/volatility
+- Smaller values mean tighter fills but higher non-fill risk; larger values increase fill probability but may add slippage
+
+Example (`config.yaml`):
+
+```yaml
+strategy:
+  breakout_buffer_points: 0.10
+```
+
 ## 🚀 Features
 
 - **Advanced Breakout Detection**: Uses first 5-minute candle analysis

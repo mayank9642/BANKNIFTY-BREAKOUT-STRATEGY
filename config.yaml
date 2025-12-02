@@ -38,7 +38,7 @@ strategy:
   banknifty_qty: 1
   banknifty_symbol: NSE:NIFTYBANK-INDEX
   breakout_buffer: 5
-  breakout_buffer_points: 2
+  breakout_buffer_points: 0.10
   breakout_pct: 10
   compensate_with_nifty: true
   enable_websocket: true
