@@ -1,12 +1,12 @@
 """
 Configuration loader for the strategy
 """
-import yaml
 import os
 
 def load_config(config_file='config.yaml'):
     """Load configuration from YAML file"""
     try:
+        import yaml
         with open(config_file, 'r') as f:
             return yaml.safe_load(f)
     except Exception as e:

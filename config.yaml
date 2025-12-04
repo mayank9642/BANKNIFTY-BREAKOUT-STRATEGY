@@ -5,11 +5,11 @@ data:
   retry_delay: 1
   timeframe: '5'
 fyers:
-  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCcExrbWxZN2dIa2FGMHlBN3lucHoyQUo2UDhZQUxuUnJqd1ZTN1ItVW9Ybmh3R2N2azItRGVyUmFOOVlWeTd2Sk1IZ2FvbDZLNEZwekFoRUhBVnlOdkgxdHcyQ3RvZXhyZC11TmRGYlFUc1cxR28wbz0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiI2Y2M3MDAwOWM1YzdlOGMzN2U4YTQ3OTdkMThlMGRjMjgwZTJmM2ZkZjgzZWM2ZDA2MmZkNDRlYiIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWU0wNDA3NyIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzY0NzIxODAwLCJpYXQiOjE3NjQ2NDExODksImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc2NDY0MTE4OSwic3ViIjoiYWNjZXNzX3Rva2VuIn0.cebcUgUtFgAm65l7qiEWlFY6l0kj-oh_8KejXxt1jP0
+  access_token: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhdWQiOlsiZDoxIiwiZDoyIiwieDowIiwieDoxIiwieDoyIl0sImF0X2hhc2giOiJnQUFBQUFCcE1QaXJGejBKVUVOOWtBUlM0VXI0Z0JKLVBnVm9wbnY2eXBnVG9QMzdrNWVkTmdTbENHWFpZaDZTSmtSTDZsVXhrMTdqV21vTkNpMS1DODJLSEhtQkVhMDJmMEpUMFN5akMxaTltX3luNldiTkJBdz0iLCJkaXNwbGF5X25hbWUiOiIiLCJvbXMiOiJLMSIsImhzbV9rZXkiOiJhZDIyYzNlYTk4ZWRjYTJmOWY5ZDEzYjZmNzIxY2Q1YzQxYmE3NWM4Y2U4NGYwZjRlODU4N2Q3ZCIsImlzRGRwaUVuYWJsZWQiOiJOIiwiaXNNdGZFbmFibGVkIjoiTiIsImZ5X2lkIjoiWU0wNDA3NyIsImFwcFR5cGUiOjEwMCwiZXhwIjoxNzY0ODk0NjAwLCJpYXQiOjE3NjQ4MTcwNjcsImlzcyI6ImFwaS5meWVycy5pbiIsIm5iZiI6MTc2NDgxNzA2Nywic3ViIjoiYWNjZXNzX3Rva2VuIn0.eEoFBGcAURLKtXhU6CxNnmjgmp56Naom8o72_VuRxdU
   client_id: QZAWYQ69KZ-100
   redirect_uri: https://trade.fyers.in/api-login/redirect-uri/index.html
   secret_key: J02WG5J3V9
-  token_expiry: '2025-12-03 07:36:29'
+  token_expiry: '2025-12-05 08:27:47'
   totp_key: ''
 logging:
   console_output: true
@@ -38,7 +38,7 @@ strategy:
   banknifty_qty: 1
   banknifty_symbol: NSE:NIFTYBANK-INDEX
   breakout_buffer: 5
-  breakout_buffer_points: 0.10
+  breakout_buffer_points: 0.1
   breakout_pct: 10
   compensate_with_nifty: true
   enable_websocket: true
@@ -82,7 +82,7 @@ trading:
     volume_periods: 5
     volume_threshold: 1.2
   partial_exits:
-    enabled: false
+    enabled: true
     exits: []
   risk_management:
     atr_multiplier: 2
@@ -109,12 +109,12 @@ trading:
       quantity: 15
       step_size: 100
     nifty:
-      enabled: false
+      enabled: true
       index_symbol: NSE:NIFTY50-INDEX
       quantity: 25
       step_size: 50
   trailing_stop:
-    enabled: false
+    enabled: true
     trail_pct: 5
     trigger_pct: 10
 websocket:

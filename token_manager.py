@@ -7,7 +7,6 @@ import datetime
 import sys
 import os
 import logging
-import yaml
 
 # Add the project root directory to Python path for imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -15,6 +14,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 def load_config(config_file='config.yaml'):
     """Load configuration from YAML file"""
     try:
+        import yaml
         with open(config_file, 'r') as f:
             return yaml.safe_load(f)
     except Exception as e:
