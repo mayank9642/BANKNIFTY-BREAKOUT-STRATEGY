@@ -96,6 +96,18 @@ class Breakout5MinStrategy:
         # Paper trading: Simulate order state for BO OCO testing
         self.paper_orders = {}  # {order_id: {'symbol': str, 'status': str, 'entry_limit': float, 'placed_at': timestamp}}
         self._paper_order_seq = 0  # ensure unique IDs for paper orders
+        
+        # Capital Management: Track running balance
+        self.initial_balance = self.config.get('simulation', {}).get('initial_balance', 100000)
+        self.current_balance = self.initial_balance
+        self.total_trades = 0
+        self.winning_trades = 0
+        self.losing_trades = 0
+        self.total_profit_loss = 0.0
+        
+        # Load existing balance from file if it exists
+        self.balance_file = 'logs/capital_balance.txt'
+        self.load_current_balance()
 
     def log_info(self, msg):
         # Sanitize message for consoles that don't support some unicode symbols
@@ -107,6 +119,141 @@ class Breakout5MinStrategy:
             except Exception:
                 safe_msg = str(msg)
             self.logger.info(safe_msg)
+    
+    def load_current_balance(self):
+        """Load current balance from file if it exists"""
+        try:
+            if os.path.exists(self.balance_file):
+                with open(self.balance_file, 'r') as f:
+                    lines = f.readlines()
+                    if len(lines) >= 6:
+                        self.current_balance = float(lines[0].strip())
+                        self.total_trades = int(lines[1].strip())
+                        self.winning_trades = int(lines[2].strip())
+                        self.losing_trades = int(lines[3].strip())
+                        self.total_profit_loss = float(lines[4].strip())
+                        
+                        self.log_info(f"💰 Loaded existing balance: ₹{self.current_balance:,.2f}")
+                        self.log_info(f"📊 Stats: {self.total_trades} trades ({self.winning_trades}W/{self.losing_trades}L) | Net P&L: ₹{self.total_profit_loss:,.2f}")
+                    else:
+                        self.log_info(f"💰 Starting fresh with initial balance: ₹{self.initial_balance:,.2f}")
+            else:
+                self.log_info(f"💰 Starting fresh with initial balance: ₹{self.initial_balance:,.2f}")
+        except Exception as e:
+            self.log_info(f"⚠️ Error loading balance: {e}. Using initial balance: ₹{self.initial_balance:,.2f}")
+    
+    def save_current_balance(self):
+        """Save current balance to file"""
+        try:
+            os.makedirs('logs', exist_ok=True)
+            with open(self.balance_file, 'w') as f:
+                f.write(f"{self.current_balance}\n")
+                f.write(f"{self.total_trades}\n")
+                f.write(f"{self.winning_trades}\n")
+                f.write(f"{self.losing_trades}\n")
+                f.write(f"{self.total_profit_loss}\n")
+                f.write(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        except Exception as e:
+            self.log_info(f"⚠️ Error saving balance: {e}")
+    
+    def update_balance_on_trade_completion(self, pnl, symbol):
+        """Update balance when a trade is completed"""
+        try:
+            self.total_trades += 1
+            self.total_profit_loss += pnl
+            self.current_balance += pnl
+            
+            if pnl > 0:
+                self.winning_trades += 1
+                status = "PROFIT ✅"
+            else:
+                self.losing_trades += 1
+                status = "LOSS ❌"
+            
+            win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
+            
+            self.log_info(f"🎯 Trade #{self.total_trades} completed: {symbol} | P&L: ₹{pnl:,.2f} ({status})")
+            self.log_info(f"💰 Updated Balance: ₹{self.current_balance:,.2f} (Change: ₹{pnl:+,.2f})")
+            self.log_info(f"📈 Performance: {self.winning_trades}W/{self.losing_trades}L | Win Rate: {win_rate:.1f}% | Net P&L: ₹{self.total_profit_loss:+,.2f}")
+            
+            # Save to file
+            self.save_current_balance()
+            
+        except Exception as e:
+            self.log_info(f"⚠️ Error updating balance: {e}")
+    
+    def reset_balance_to_initial(self):
+        """Reset balance to initial amount (₹100,000)"""
+        try:
+            self.current_balance = self.initial_balance
+            self.total_trades = 0
+            self.winning_trades = 0
+            self.losing_trades = 0
+            self.total_profit_loss = 0.0
+            
+            self.save_current_balance()
+            self.log_info(f"🔄 Balance reset to initial amount: ₹{self.initial_balance:,.2f}")
+            
+        except Exception as e:
+            self.log_info(f"⚠️ Error resetting balance: {e}")
+
+    def log_paper_trade_to_excel(self, order, symbol, entry_price, exit_price, qty, pnl, exit_reason):
+        """Log paper trading results to Excel and CSV files"""
+        try:
+            from datetime import datetime
+            
+            # Prepare trade data for Excel
+            entry_time = datetime.fromtimestamp(order.get('placed_at', 0), self.ist).strftime('%Y-%m-%d %H:%M:%S') if 'placed_at' in order else ''
+            exit_time = datetime.now(self.ist).strftime('%Y-%m-%d %H:%M:%S')
+            
+            # Get order details
+            sl = order.get('sl', 0)
+            target = order.get('target', 0)
+            max_up_pnl = order.get('max_up_pnl', 0)
+            max_down_pnl = order.get('max_down_pnl', 0)
+            max_up_pct = order.get('max_up_pct', 0)
+            max_down_pct = order.get('max_down_pct', 0)
+            
+            # Create Excel row data with date-based file names
+            today = datetime.now(self.ist).strftime('%Y%m%d')
+            excel_file = f'logs/trade_history_{today}.xlsx'
+            csv_file = f'logs/trade_history_{today}.csv'
+            
+            status_columns = [
+                'Entry DateTime', 'Index', 'Symbol', 'Direction', 'Entry Price', 
+                'Exit DateTime', 'Exit Price', 'Stop Loss', 'Target', 'Trailing SL', 
+                'Quantity', 'Brokerage', 'P&L', 'Margin Required', '% Gain/Loss', 
+                'Max Up (₹)', 'Max Down (₹)', 'Max Up (%)', 'Max Down (%)', 'VIX'
+            ]
+            
+            # Calculate proper values for Excel
+            total_investment = entry_price * qty
+            pnl_percentage = (pnl / total_investment * 100) if total_investment else 0
+            lots_traded = qty / 35  # Convert quantity to lots (35 qty = 1 lot)
+            brokerage_cost = lots_traded * 50  # ₹50 per lot for buy and sell combined
+            margin_required = total_investment  # Total investment IS the margin required
+            trailing_sl_value = sl  # Use actual trailing SL if available
+            
+            # Get current VIX level
+            vix_value = self.get_current_vix() if hasattr(self, 'get_current_vix') else order.get('vix', 0)
+            
+            final_row = [
+                entry_time, 'BANKNIFTY', symbol, 'BUY', entry_price,
+                exit_time, exit_price, sl, target, trailing_sl_value, 
+                qty, brokerage_cost, pnl, margin_required, pnl_percentage,
+                max_up_pnl, max_down_pnl, max_up_pct, max_down_pct, vix_value
+            ]
+            
+            # Write to Excel and CSV
+            self._append_final_row_with_format(excel_file, csv_file, final_row, status_columns)
+            
+            # Also log to regular trade history
+            self.log_trade(symbol, exit_price, qty, 'BUY', exit_reason, exit_time)
+            
+            self.log_info(f"📊 Trade logged to Excel: {symbol} | Entry: ₹{entry_price:.2f} | Exit: ₹{exit_price:.2f} | P&L: ₹{pnl:.2f}")
+            
+        except Exception as e:
+            self.log_info(f"⚠️ Error logging paper trade to Excel: {e}")
 
     def run(self):
         archive_strategy_log()
@@ -268,6 +415,19 @@ class Breakout5MinStrategy:
         except Exception as e:
             self.log_info(f"[ERROR] Failed to generate option symbol: {e}")
             return None
+
+    def get_current_vix(self):
+        """Get current VIX value"""
+        try:
+            if self.fyers and not self.simulation:
+                vix_symbol = "NSE:INDIAVIX-INDEX"
+                response = self.fyers.quotes({"symbols": vix_symbol})
+                if response and response.get('s') == 'ok':
+                    return response['d'][0]['v']['lp'] if response.get('d') and len(response['d']) > 0 else 0
+            return 15.5  # Default VIX for simulation/paper trading
+        except Exception as e:
+            self.log_info(f"Error fetching VIX: {e}")
+            return 15.5
 
     def get_ltp(self, symbol):
         # Handle simulation mode with dummy LTP
@@ -471,11 +631,21 @@ class Breakout5MinStrategy:
                 self.log_info(f"[PAPER EXIT] Stop Loss hit at {ltp:.2f}")
                 order['exit_reason'] = 'STOPLOSS'
                 order['exit_price'] = ltp
+                # Update balance with P&L
+                final_pnl = (ltp - entry) * qty
+                self.update_balance_on_trade_completion(final_pnl, symbol)
+                # Log to Excel and CSV
+                self.log_paper_trade_to_excel(order, symbol, entry, ltp, qty, final_pnl, 'STOPLOSS')
                 break
             if ltp >= target:
                 self.log_info(f"[PAPER EXIT] Target hit at {ltp:.2f}")
                 order['exit_reason'] = 'TARGET'
                 order['exit_price'] = ltp
+                # Update balance with P&L
+                final_pnl = (ltp - entry) * qty
+                self.update_balance_on_trade_completion(final_pnl, symbol)
+                # Log to Excel and CSV
+                self.log_paper_trade_to_excel(order, symbol, entry, ltp, qty, final_pnl, 'TARGET')
                 break
             # Simple trailing: trail to (ltp - 15) points if price moved above entry by > 15
             trail_points = self.config.get('strategy', {}).get('sl_points', 15)
@@ -488,6 +658,11 @@ class Breakout5MinStrategy:
         else:
             order['exit_reason'] = 'TIME'
             order['exit_price'] = self.get_ltp(symbol)
+            # Update balance with P&L
+            final_pnl = (order['exit_price'] - entry) * qty
+            self.update_balance_on_trade_completion(final_pnl, symbol)
+            # Log to Excel and CSV
+            self.log_paper_trade_to_excel(order, symbol, entry, order['exit_price'], qty, final_pnl, 'TIME_EXIT')
             self.log_info(f"[PAPER EXIT] Max holding reached, exiting at {order['exit_price']:.2f}")
     
     def print_paper_trading_summary(self):
@@ -740,10 +915,14 @@ class Breakout5MinStrategy:
             get_column_letter = None
             Font = None
             numbers = None
-        excel_file = 'logs/trade_status_history.xlsx'
-        csv_file = 'logs/trade_status_history.csv'
+        # Use single Forward Testing file that appends all trades
+        excel_file = 'logs/Forward Testing Trade History.xlsx'
+        csv_file = 'logs/Forward Testing Trade History.csv'
         status_columns = [
-            'Entry DateTime', 'Index', 'Symbol', 'Direction', 'Entry Price', 'Exit DateTime', 'Exit Price', 'Stop Loss', 'Target', 'Trailing SL', 'Quantity', 'Brokerage', 'P&L', 'Margin Required', '% Gain/Loss', 'max up', 'max down', 'max up %', 'max down %'
+            'Entry DateTime', 'Index', 'Symbol', 'Direction', 'Entry Price', 
+            'Exit DateTime', 'Exit Price', 'Stop Loss', 'Target', 'Trailing SL', 
+            'Quantity', 'Brokerage', 'P&L', 'Net P&L', 'Margin Required', '% Gain/Loss', 
+            'Max Up (₹)', 'Max Down (₹)', 'Max Up (%)', 'Max Down (%)', 'VIX', 'Balance After Trade'
         ]
         if not os.path.exists('logs'):
             os.makedirs('logs')
@@ -816,13 +995,31 @@ class Breakout5MinStrategy:
             self.log_trade(symbol, exit_price, quantity, side, exit_reason, exit_time)
             # Write final status to Excel
             final_ltp = exit_price
+            # Calculate all values correctly for Excel
             final_pnl = (final_ltp - entry_price) * quantity if final_ltp is not None else None
-            final_maxup_pct = (maxup / (entry_price * quantity) * 100) if entry_price and quantity else 0
-            final_maxdown_pct = (maxdown / (entry_price * quantity) * 100) if entry_price and quantity else 0
+            total_investment = entry_price * quantity
+            pnl_percentage = (final_pnl / total_investment * 100) if total_investment and final_pnl is not None else 0
+            final_maxup_pct = (maxup / total_investment * 100) if total_investment and maxup else 0
+            final_maxdown_pct = (maxdown / total_investment * 100) if total_investment and maxdown else 0
+            lots_traded = quantity / 35  # Convert quantity to lots (35 qty = 1 lot)
+            brokerage_cost = lots_traded * 50  # ₹50 per lot for buy and sell combined
+            margin_required = total_investment  # Total investment IS the margin required
+            
+            # Calculate Net P&L (P&L minus brokerage)
+            net_pnl = final_pnl - brokerage_cost if final_pnl is not None else -brokerage_cost
+            
+            # Update balance after trade
+            self.current_balance += net_pnl
+            balance_after_trade = self.current_balance
+            self.save_current_balance()
+            
+            # Get current VIX level
+            vix_value = self.get_current_vix() if hasattr(self, 'get_current_vix') else 0
+            
             final_row = [
                 entry_time, index_name, symbol, side, entry_price, exit_time, final_ltp, sl, target, trailing_sl, quantity,
-                brokerage, final_pnl, margin_required, final_pnl / (margin_required or 1) * 100 if margin_required else '',
-                maxup, maxdown, final_maxup_pct, final_maxdown_pct
+                brokerage_cost, final_pnl, net_pnl, margin_required, pnl_percentage,
+                maxup, maxdown, final_maxup_pct, final_maxdown_pct, vix_value, balance_after_trade
             ]
             # Append and write with Excel formatting
             self._append_final_row_with_format(excel_file, csv_file, final_row, status_columns)
@@ -844,10 +1041,33 @@ class Breakout5MinStrategy:
             self.log_info(f"[EXIT] Max holding period reached for {symbol} at {ltp}")
             self.log_trade(symbol, ltp, quantity, side, 'MAX_HOLDING', exit_time)
             # Write final status to Excel for max holding exit
+            # Calculate all values correctly for max holding exit
             final_ltp = ltp
             final_pnl = (final_ltp - entry_price) * quantity if final_ltp is not None else None
-            final_maxup_pct = (maxup / (entry_price * quantity) * 100) if entry_price and quantity else 0
-            final_row = [exit_time, symbol, entry_price, final_ltp, sl, trailing_sl, target, final_pnl, maxup, final_maxup_pct, maxdown]
+            total_investment = entry_price * quantity
+            pnl_percentage = (final_pnl / total_investment * 100) if total_investment and final_pnl is not None else 0
+            final_maxup_pct = (maxup / total_investment * 100) if total_investment and maxup else 0
+            final_maxdown_pct = (maxdown / total_investment * 100) if total_investment and maxdown else 0
+            lots_traded = quantity / 35  # Convert quantity to lots (35 qty = 1 lot)
+            brokerage_cost = lots_traded * 50  # ₹50 per lot for buy and sell combined
+            margin_required = total_investment  # Total investment IS the margin required
+            
+            # Calculate Net P&L (P&L minus brokerage)
+            net_pnl = final_pnl - brokerage_cost if final_pnl is not None else -brokerage_cost
+            
+            # Update balance after trade
+            self.current_balance += net_pnl
+            balance_after_trade = self.current_balance
+            self.save_current_balance()
+            
+            # Get current VIX level
+            vix_value = self.get_current_vix() if hasattr(self, 'get_current_vix') else 0
+            
+            final_row = [
+                entry_time, index_name, symbol, side, entry_price, exit_time, final_ltp, sl, target, trailing_sl, quantity,
+                brokerage_cost, final_pnl, net_pnl, margin_required, pnl_percentage,
+                maxup, maxdown, final_maxup_pct, final_maxdown_pct, vix_value, balance_after_trade
+            ]
             # Append and write with Excel formatting
             self._append_final_row_with_format(excel_file, csv_file, final_row, status_columns)
             # Also append to CSV (create header if not exists)

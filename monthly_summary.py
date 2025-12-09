@@ -10,18 +10,38 @@ import numpy as np
 from datetime import datetime
 
 LOGS_DIR = Path('logs')
-CSV_FILE = LOGS_DIR / 'trade_status_history.csv'
-# Fallback for older installations that used trade_history.csv
-FALLBACK_CSV = LOGS_DIR / 'trade_history.csv'
+
+def get_latest_trade_file():
+    """Find the most recent trade history CSV file"""
+    # Look for date-based files first (trade_history_YYYYMMDD.csv)
+    date_files = list(LOGS_DIR.glob('trade_history_*.csv'))
+    if date_files:
+        # Sort by filename (date) and return the latest
+        latest_file = sorted(date_files)[-1]
+        return latest_file
+    
+    # Fallback to legacy files
+    legacy_files = [
+        LOGS_DIR / 'trade_status_history.csv',
+        LOGS_DIR / 'trade_history.csv'
+    ]
+    
+    for file in legacy_files:
+        if file.exists():
+            return file
+    
+    return None
+
+CSV_FILE = get_latest_trade_file()
 
 
 def load_trades(csv_path: Path) -> pd.DataFrame:
-    # Accept either the requested CSV, or fallback to the legacy trade_history.csv
-    if not csv_path.exists():
-        if FALLBACK_CSV.exists():
-            csv_path = FALLBACK_CSV
-        else:
-            raise FileNotFoundError(f"CSV not found: {csv_path}")
+    # Use the latest available trade file if the requested one doesn't exist
+    if csv_path is None or not csv_path.exists():
+        latest_file = get_latest_trade_file()
+        if latest_file is None:
+            raise FileNotFoundError("No trade history CSV files found")
+        csv_path = latest_file
     # Try reading with header; many legacy logs do not include a header and are simple rows.
     # If pandas mistakenly uses the first data row as header (common with headerless logs),
     # detect that and re-read with header=None.
@@ -154,8 +174,8 @@ def save_summary_csv(metrics_df: pd.DataFrame, out_csv: Path):
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='Generate monthly performance summary from trade_status_history.csv')
-    parser.add_argument('--csv', type=str, default=str(CSV_FILE), help='Path to trade_status_history.csv')
+    parser = argparse.ArgumentParser(description='Generate monthly performance summary from trade history CSV files')
+    parser.add_argument('--csv', type=str, default=str(CSV_FILE) if CSV_FILE else '', help='Path to trade history CSV file (auto-detects latest if not specified)')
     parser.add_argument('--out', type=str, default='logs', help='Output directory')
     args = parser.parse_args()
 
