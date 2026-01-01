@@ -110,15 +110,23 @@ class Breakout5MinStrategy:
         self.load_current_balance()
 
     def log_info(self, msg):
-        # Sanitize message for consoles that don't support some unicode symbols
-        try:
-            self.logger.info(msg)
-        except Exception:
-            try:
-                safe_msg = str(msg).encode('ascii', 'ignore').decode('ascii')
-            except Exception:
-                safe_msg = str(msg)
-            self.logger.info(safe_msg)
+        # Replace emojis with ASCII text and remove non-ASCII characters to avoid UnicodeEncodeError
+        import re
+        emoji_map = {
+            '🎯': '[TARGET]',
+            '💰': '[BALANCE]',
+            '📈': '[PERF]',
+            '📊': '[EXCEL]',
+            '✅': '[WIN]',
+            '❌': '[LOSS]',
+            '📉': '[DOWN]',
+            '⚠️': '[WARN]',
+        }
+        for emoji, replacement in emoji_map.items():
+            msg = msg.replace(emoji, replacement)
+        # Remove any other non-ASCII characters
+        safe_msg = re.sub(r'[^\x00-\x7F]+', '', msg)
+        self.logger.info(safe_msg)
     
     def load_current_balance(self):
         """Load current balance from file if it exists"""
@@ -156,14 +164,21 @@ class Breakout5MinStrategy:
         except Exception as e:
             self.log_info(f"⚠️ Error saving balance: {e}")
     
-    def update_balance_on_trade_completion(self, pnl, symbol):
+    def update_balance_on_trade_completion(self, pnl, qty, symbol):
         """Update balance when a trade is completed"""
         try:
-            self.total_trades += 1
-            self.total_profit_loss += pnl
-            self.current_balance += pnl
+            # Calculate net P&L (P&L minus brokerage)
+            brokerage_cost = 50  # Fixed brokerage per trade (buy+sell)
+            net_pnl = pnl - brokerage_cost
             
-            if pnl > 0:
+            self.total_trades += 1
+            self.total_profit_loss += net_pnl
+            self.current_balance += net_pnl
+            
+            # Save the updated balance
+            self.save_current_balance()
+            
+            if net_pnl > 0:
                 self.winning_trades += 1
                 status = "PROFIT ✅"
             else:
@@ -172,7 +187,7 @@ class Breakout5MinStrategy:
             
             win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
             
-            self.log_info(f"🎯 Trade #{self.total_trades} completed: {symbol} | P&L: ₹{pnl:,.2f} ({status})")
+            self.log_info(f"🎯 Trade #{self.total_trades} completed: {symbol} | Net P&L: ₹{net_pnl:,.2f} ({status})")
             self.log_info(f"💰 Updated Balance: ₹{self.current_balance:,.2f} (Change: ₹{pnl:+,.2f})")
             self.log_info(f"📈 Performance: {self.winning_trades}W/{self.losing_trades}L | Win Rate: {win_rate:.1f}% | Net P&L: ₹{self.total_profit_loss:+,.2f}")
             
@@ -209,21 +224,31 @@ class Breakout5MinStrategy:
             # Get order details
             sl = order.get('sl', 0)
             target = order.get('target', 0)
+            
+            # Get max up/down PnL values - handle cases where they might not be set properly
             max_up_pnl = order.get('max_up_pnl', 0)
             max_down_pnl = order.get('max_down_pnl', 0)
-            max_up_pct = order.get('max_up_pct', 0)
-            max_down_pct = order.get('max_down_pct', 0)
             
-            # Create Excel row data with date-based file names
-            today = datetime.now(self.ist).strftime('%Y%m%d')
-            excel_file = f'logs/trade_history_{today}.xlsx'
-            csv_file = f'logs/trade_history_{today}.csv'
+            # If max values are still at their initial values (inf/-inf), use PnL instead
+            if max_up_pnl == float('-inf') or max_up_pnl == 0:
+                max_up_pnl = max(0, pnl) if pnl is not None else 0
+            if max_down_pnl == float('inf') or max_down_pnl == 0:
+                max_down_pnl = min(0, pnl) if pnl is not None else 0
+            
+            # Calculate percentages based on the corrected max values
+            total_investment = entry_price * qty
+            max_up_pct = (max_up_pnl / total_investment * 100) if total_investment and max_up_pnl else 0
+            max_down_pct = (max_down_pnl / total_investment * 100) if total_investment and max_down_pnl else 0
+            
+            # Use single Forward Testing file that appends all trades
+            excel_file = 'logs/Forward Testing Trade History.xlsx'
+            csv_file = 'logs/Forward Testing Trade History.csv'
             
             status_columns = [
                 'Entry DateTime', 'Index', 'Symbol', 'Direction', 'Entry Price', 
                 'Exit DateTime', 'Exit Price', 'Stop Loss', 'Target', 'Trailing SL', 
-                'Quantity', 'Brokerage', 'P&L', 'Margin Required', '% Gain/Loss', 
-                'Max Up (₹)', 'Max Down (₹)', 'Max Up (%)', 'Max Down (%)', 'VIX'
+                'Quantity', 'Brokerage', 'P&L', 'Net P&L', 'Margin Required', '% Gain/Loss', 
+                'Max Up (₹)', 'Max Down (₹)', 'Max Up (%)', 'Max Down (%)', 'VIX', 'Balance After Trade'
             ]
             
             # Calculate proper values for Excel
@@ -234,14 +259,21 @@ class Breakout5MinStrategy:
             margin_required = total_investment  # Total investment IS the margin required
             trailing_sl_value = sl  # Use actual trailing SL if available
             
+            # Calculate Net P&L (P&L minus brokerage)
+            net_pnl = pnl - brokerage_cost if pnl is not None else -brokerage_cost
+            
+            # Balance is already updated by update_balance_on_trade_completion()
+            # Just get the current balance for Excel logging
+            balance_after_trade = self.current_balance
+            
             # Get current VIX level
             vix_value = self.get_current_vix() if hasattr(self, 'get_current_vix') else order.get('vix', 0)
             
             final_row = [
                 entry_time, 'BANKNIFTY', symbol, 'BUY', entry_price,
                 exit_time, exit_price, sl, target, trailing_sl_value, 
-                qty, brokerage_cost, pnl, margin_required, pnl_percentage,
-                max_up_pnl, max_down_pnl, max_up_pct, max_down_pct, vix_value
+                qty, brokerage_cost, pnl, net_pnl, margin_required, pnl_percentage,
+                max_up_pnl, max_down_pnl, max_up_pct, max_down_pct, vix_value, balance_after_trade
             ]
             
             # Write to Excel and CSV
@@ -478,10 +510,10 @@ class Breakout5MinStrategy:
         self.monitor_option_high_breakout(ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name, ce_close, pe_close)
 
     def monitor_option_high_breakout(self, ce_symbol, pe_symbol, ce_breakout, pe_breakout, qty, index_name, ce_close, pe_close):
-        from datetime import datetime, timedelta
-        breakout_taken = False
-        start_time = time.time()
-        max_monitor_time = 60 * 60  # Monitor for 60 minutes
+    from datetime import datetime, timedelta, time as dtime
+    breakout_taken = False
+    # Monitor until 3:30 PM IST
+    market_close_time = dtime(15, 30)
         
         # OCO Implementation: Place both CE and PE bracket orders IMMEDIATELY
         ce_order_id = None
@@ -519,7 +551,11 @@ class Breakout5MinStrategy:
         
         try:
             # ==== PHASE 2: Monitor order status and implement OCO cancellation ====
-            while not oco_entry_taken and (time.time() - start_time < max_monitor_time):
+            while not oco_entry_taken:
+                now = datetime.now(self.ist).time()
+                if now >= market_close_time:
+                    self.log_info("[INFO] Market close reached (3:30 PM). Stopping breakout monitoring.")
+                    break
                 # Fetch current order status
                 ce_status = self.get_order_status(ce_order_id)
                 pe_status = self.get_order_status(pe_order_id)
@@ -633,7 +669,7 @@ class Breakout5MinStrategy:
                 order['exit_price'] = ltp
                 # Update balance with P&L
                 final_pnl = (ltp - entry) * qty
-                self.update_balance_on_trade_completion(final_pnl, symbol)
+                self.update_balance_on_trade_completion(final_pnl, qty, symbol)
                 # Log to Excel and CSV
                 self.log_paper_trade_to_excel(order, symbol, entry, ltp, qty, final_pnl, 'STOPLOSS')
                 break
@@ -643,24 +679,19 @@ class Breakout5MinStrategy:
                 order['exit_price'] = ltp
                 # Update balance with P&L
                 final_pnl = (ltp - entry) * qty
-                self.update_balance_on_trade_completion(final_pnl, symbol)
+                self.update_balance_on_trade_completion(final_pnl, qty, symbol)
                 # Log to Excel and CSV
                 self.log_paper_trade_to_excel(order, symbol, entry, ltp, qty, final_pnl, 'TARGET')
                 break
-            # Simple trailing: trail to (ltp - 15) points if price moved above entry by > 15
-            trail_points = self.config.get('strategy', {}).get('sl_points', 15)
-            if ltp > entry + trail_points:
-                new_trail = max(trailing_sl, ltp - trail_points)
-                if new_trail > trailing_sl:
-                    trailing_sl = new_trail
-                    self.log_info(f"[PAPER TRAIL] Trailing SL moved to {trailing_sl:.2f}")
+            # Trailing SL logic disabled: keep SL fixed at initial value
+            # (No update to trailing_sl; only original SL is used for exit)
             time.sleep(2)
         else:
             order['exit_reason'] = 'TIME'
             order['exit_price'] = self.get_ltp(symbol)
             # Update balance with P&L
             final_pnl = (order['exit_price'] - entry) * qty
-            self.update_balance_on_trade_completion(final_pnl, symbol)
+            self.update_balance_on_trade_completion(final_pnl, qty, symbol)
             # Log to Excel and CSV
             self.log_paper_trade_to_excel(order, symbol, entry, order['exit_price'], qty, final_pnl, 'TIME_EXIT')
             self.log_info(f"[PAPER EXIT] Max holding reached, exiting at {order['exit_price']:.2f}")
@@ -969,13 +1000,8 @@ class Breakout5MinStrategy:
             maxdown = min(maxdown, pnl)
             maxup_pct = (maxup / (entry_price * quantity)) * 100 if entry_price and quantity else 0
             maxdown_pct = (maxdown / (entry_price * quantity)) * 100 if entry_price and quantity else 0
-            # Example trailing SL logic: move up trailing SL if price moves up by 10% from entry
-            if entry_price < 500:
-                if ltp > entry_price * 1.10:
-                    trailing_sl = max(trailing_sl, ltp * 0.90)
-            else:
-                if ltp > entry_price * 1.07:
-                    trailing_sl = max(trailing_sl, ltp * 0.93)
+            # Trailing SL logic disabled: keep SL fixed at initial value
+            # (No update to trailing_sl; only original SL is used for exit)
             # Log every second to the main log file for live monitoring
             self.log_info(f"[TRADE STATUS] Symbol: {symbol} | Entry: {entry_price:.2f} | LTP: {ltp:.2f} | SL: {sl:.2f} | Trailing SL: {trailing_sl:.2f} | Target: {target:.2f} | PnL: {pnl:.2f} | MaxUp: {maxup:.2f} | MaxUp(%): {maxup_pct:.2f} | MaxDown: {maxdown:.2f}")
             # (no per-update Excel writes anymore)
@@ -1016,8 +1042,9 @@ class Breakout5MinStrategy:
             # Get current VIX level
             vix_value = self.get_current_vix() if hasattr(self, 'get_current_vix') else 0
             
+            # Use the original SL for Excel (no trailing)
             final_row = [
-                entry_time, index_name, symbol, side, entry_price, exit_time, final_ltp, sl, target, trailing_sl, quantity,
+                entry_time, index_name, symbol, side, entry_price, exit_time, final_ltp, sl, target, sl, quantity,
                 brokerage_cost, final_pnl, net_pnl, margin_required, pnl_percentage,
                 maxup, maxdown, final_maxup_pct, final_maxdown_pct, vix_value, balance_after_trade
             ]

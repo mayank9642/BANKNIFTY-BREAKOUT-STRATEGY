@@ -1,0 +1,2 @@
+Entry DateTime,Index,Symbol,Direction,Entry Price,Exit DateTime,Exit Price,Stop Loss,Target,Trailing SL,Quantity,Brokerage,P&L,Margin Required,% Gain/Loss,Max Up (₹),Max Down (₹),Max Up (%),Max Down (%),VIX
+2025-12-10 09:20:03,BANKNIFTY,NSE:BANKNIFTY25DEC59400CE,BUY,698.6,2025-12-10 09:38:37,709.1,663.65,733.55,663.65,35.0,50.0,367.5,24451.0,1.5,1006.25,-406.0,4.12,-1.66,10.83
