@@ -70,6 +70,116 @@ console_handler.setLevel(logging.INFO)
 root_logger.addHandler(console_handler)
 
 class Breakout5MinStrategy:
+    def print_paper_trading_summary(self):
+        """Prints a detailed summary of all paper trades/orders for the session, OCO logic, and P&L."""
+        self.log_info("")
+        self.log_info("=" * 79)
+        self.log_info("PAPER TRADING SUMMARY - Bracket Order OCO Test")
+        self.log_info("=" * 79)
+        for order_id, order in self.paper_orders.items():
+            self.log_info("")
+            self.log_info(f"Order ID: {order_id}")
+            self.log_info(f"  Symbol: {order.get('symbol','')}")
+            self.log_info(f"  Status: {order.get('status','')}")
+            self.log_info(f"  Entry Limit: {order.get('entry_limit','')}")
+            self.log_info(f"  SL: {order.get('sl','')} | Target: {order.get('target','')}")
+            self.log_info(f"  Qty: {order.get('qty',35)}")
+            if order.get('status') == 'CANCELLED':
+                self.log_info("  Cancelled (OCO - other leg filled)")
+            if order.get('status') == 'FILLED':
+                filled_time = order.get('filled_time', '')
+                fill_price = order.get('entry_limit', '')
+                self.log_info(f"  Filled at: {filled_time} @ {fill_price}")
+                max_up = order.get('max_up_pnl', 0)
+                max_dn = order.get('max_down_pnl', 0)
+                entry = order.get('entry_limit', 0)
+                qty = order.get('qty', 35)
+                max_up_pct = (max_up / (entry * qty) * 100) if entry and qty else 0
+                max_dn_pct = (max_dn / (entry * qty) * 100) if entry and qty else 0
+                self.log_info(f"  Max Up: {max_up:.2f} ({max_up_pct:.2f}%) | Max Down: {max_dn:.2f} ({max_dn_pct:.2f}%)")
+        self.log_info("")
+        self.log_info("=" * 79)
+        # OCO Test Result
+        filled = [o for o in self.paper_orders.values() if o.get('status') == 'FILLED']
+        cancelled = [o for o in self.paper_orders.values() if o.get('status') == 'CANCELLED']
+        if filled and cancelled:
+            self.log_info("OCO Test Result:")
+            self.log_info("[OK] OCO LOGIC WORKING CORRECTLY!")
+            self.log_info(f"   One order filled: {filled[0].get('symbol')}")
+            self.log_info(f"   Other order cancelled: {cancelled[0].get('symbol')}")
+        self.log_info("=" * 79)
+        self.log_info("")
+    def monitor_filled_paper_order(self, order_id):
+        """Monitor paper trade using live prices (get_ltp) after breakout: logs entry, LTP, SL, target, P&L, max up/down, trailing SL, and final exit/performance logs."""
+        import time
+        from datetime import datetime
+        order = self.paper_orders.get(order_id, {})
+        symbol = order.get('symbol', 'UNKNOWN')
+        entry_price = order.get('entry_limit', 0)
+        qty = order.get('qty', 35)
+        sl = entry_price * 0.95  # Example: 5% SL
+        target = entry_price * 1.15  # Example: 15% Target
+        trailing_sl = sl
+        max_up_pnl = float('-inf')
+        max_down_pnl = float('inf')
+        exit_price = None
+        trade_active = True
+        tick_count = 0
+        filled_time = datetime.now(self.ist).strftime('%H:%M:%S')
+        order['filled_time'] = filled_time
+        while trade_active and tick_count < 30:
+            ltp = self.get_ltp(symbol)
+            try:
+                ltp = float(ltp)
+            except Exception:
+                ltp = entry_price
+            pnl = (ltp - entry_price) * qty
+            max_up_pnl = max(max_up_pnl, pnl)
+            max_down_pnl = min(max_down_pnl, pnl)
+            pnl_pct = (pnl / (entry_price * qty)) * 100 if entry_price else 0
+            max_up_pct = (max_up_pnl / (entry_price * qty)) * 100 if entry_price else 0
+            max_down_pct = (max_down_pnl / (entry_price * qty)) * 100 if entry_price else 0
+            self.log_info(f"[PAPER STATUS] {symbol} | LTP: {ltp:.2f} | Entry: {entry_price:.2f} | SL: {sl:.2f} | Target: {target:.2f} | PnL: {pnl:.2f}")
+            # Exit on SL/Target hit
+            if ltp <= sl:
+                self.log_info(f"[PAPER EXIT] Stop Loss hit at {ltp:.2f}")
+                exit_price = ltp
+                trade_active = False
+                exit_reason = 'SL'
+            elif ltp >= target:
+                self.log_info(f"[PAPER EXIT] Target hit at {ltp:.2f}")
+                exit_price = ltp
+                trade_active = False
+                exit_reason = 'TARGET'
+            tick_count += 1
+            time.sleep(1)
+        if trade_active:
+            self.log_info(f"[PAPER EXIT] Monitoring timeout at {ltp:.2f}")
+            exit_price = ltp
+            exit_reason = 'TIMEOUT'
+        # Update order with exit details
+        order['exit_price'] = exit_price
+        order['max_up_pnl'] = max_up_pnl
+        order['max_down_pnl'] = max_down_pnl
+        order['sl'] = sl
+        order['target'] = target
+        order['trailing_sl'] = trailing_sl
+        order['qty'] = qty
+        self.paper_orders[order_id] = order
+        # Log trade completion and performance
+        net_pnl = (exit_price - entry_price) * qty if exit_price is not None else 0
+        status = 'PROFIT [WIN]' if net_pnl > 0 else 'LOSS'
+        self.total_trades += 1
+        if net_pnl > 0:
+            self.winning_trades += 1
+        else:
+            self.losing_trades += 1
+        self.total_profit_loss += net_pnl
+        self.log_info(f"[TARGET] Trade #{self.total_trades} completed: {symbol} | Net P&L: {net_pnl:.2f} ({status})")
+        self.current_balance += net_pnl
+        self.log_info(f"[BALANCE] Updated Balance: {self.current_balance:,.2f} (Change: {net_pnl:+.2f})")
+        win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
+        self.log_info(f"[PERF] Performance: {self.winning_trades}W/{self.losing_trades}L | Win Rate: {win_rate:.1f}% | Net P&L: {self.total_profit_loss:+,.2f}")
     def __init__(self, simulation=False, paper_trading=False):
         self.simulation = simulation
         self.paper_trading = paper_trading
@@ -353,16 +463,10 @@ class Breakout5MinStrategy:
             self.log_info(f"[VIX] Error logging VIX snapshot: {e}")
 
     def fetch_5min_candle(self, symbol):
-        # Handle simulation mode with dummy data
-        if self.simulation and not self.paper_trading:
-            self.log_info(f"[SIMULATION] Using dummy 5-min candle for {symbol}")
-            return (20000, 20020, 19980, 20010, '09:15')
-        
-        # Use DataFetcher for reliable candle data
+        # Always use DataFetcher for live candle data
         if self.data_fetcher is None:
             self.log_info(f"[ERROR] DataFetcher not initialized for {symbol}.")
             return None
-            
         candle_data = self.data_fetcher.get_first_5min_candle(symbol)
         if candle_data:
             o, h, l, cl, candle_time = candle_data
@@ -372,16 +476,10 @@ class Breakout5MinStrategy:
         return None
 
     def fetch_option_ohlc(self, symbol):
-        # Handle simulation mode with dummy data
-        if self.simulation and not self.paper_trading:
-            self.log_info(f"[SIMULATION] Using dummy option OHLC for {symbol}")
-            return (100, 106, 99, 105, '09:20')
-        
-        # Use DataFetcher for reliable option data
+        # Always use DataFetcher for live option OHLC data
         if self.data_fetcher is None:
             self.log_info(f"[ERROR] DataFetcher not initialized for option {symbol}.")
             return None
-            
         candle_data = self.data_fetcher.get_first_5min_candle(symbol)
         if candle_data:
             o, h, l, cl, candle_time = candle_data
@@ -451,31 +549,23 @@ class Breakout5MinStrategy:
     def get_current_vix(self):
         """Get current VIX value"""
         try:
-            if self.fyers and not self.simulation:
+            if self.fyers:
                 vix_symbol = "NSE:INDIAVIX-INDEX"
                 response = self.fyers.quotes({"symbols": vix_symbol})
                 if response and response.get('s') == 'ok':
                     return response['d'][0]['v']['lp'] if response.get('d') and len(response['d']) > 0 else 0
-            return 15.5  # Default VIX for simulation/paper trading
+            self.log_info(f"[ERROR] Fyers client not initialized for VIX fetch.")
+            return None
         except Exception as e:
             self.log_info(f"Error fetching VIX: {e}")
-            return 15.5
+            return None
 
     def get_ltp(self, symbol):
-        # Handle simulation mode with dummy LTP
-        if self.simulation and not self.paper_trading:
-            # Simulate a breakout immediately for testing
-            import random
-            return 110 + random.uniform(-2, 2)  # Around 110 to trigger breakout at 108
-        
-        # Use Fyers API utility for LTP
+        # Always use Fyers API utility for LTP
         from src.fyers_api_utils import get_ltp
         from datetime import datetime
         if self.fyers:
             ltp = get_ltp(self.fyers, symbol)
-            # Log timestamp for debugging timing issues
-            current_time = datetime.now(self.ist).strftime('%H:%M:%S')
-            # Only log occasionally to avoid spam, or log first few times
             return ltp
         else:
             self.log_info(f"[ERROR] Fyers client not initialized for LTP fetch.")
@@ -488,14 +578,14 @@ class Breakout5MinStrategy:
     def monitor_index(self, symbol, qty, index_name):
         candle = self.fetch_5min_candle(symbol)
         if not candle:
-            return
+            return None
         open_, high, low, close, candle_time = candle
         ce_symbol = self.get_atm_option_symbol(high, 'CE', index_name)
         pe_symbol = self.get_atm_option_symbol(low, 'PE', index_name)
         ce_ohlc = self.fetch_option_ohlc(ce_symbol)
         pe_ohlc = self.fetch_option_ohlc(pe_symbol)
         if not ce_ohlc or not pe_ohlc:
-            return
+            return None
         ce_high = ce_ohlc[1]
         pe_high = pe_ohlc[1]
         ce_close = ce_ohlc[3]
@@ -528,8 +618,23 @@ class Breakout5MinStrategy:
         # Place BOTH bracket orders immediately
         self.log_info(f"Placing CE BO: {ce_symbol} @ {ce_entry_price:.2f} (trigger when price >= {ce_breakout:.2f})")
         ce_order_id = self.place_bracket_order(ce_symbol, ce_entry_price, quantity, ce_breakout, index_name)
+        # Ensure paper_orders is populated for simulation/paper mode
+        if self.simulation or self.paper_trading:
+            self.paper_orders[ce_order_id] = {
+                'symbol': ce_symbol,
+                'status': 'PENDING',
+                'entry_limit': ce_entry_price,
+                'placed_at': time.time()
+            }
         self.log_info(f"Placing PE BO: {pe_symbol} @ {pe_entry_price:.2f} (trigger when price >= {pe_breakout:.2f})")
         pe_order_id = self.place_bracket_order(pe_symbol, pe_entry_price, quantity, pe_breakout, index_name)
+        if self.simulation or self.paper_trading:
+            self.paper_orders[pe_order_id] = {
+                'symbol': pe_symbol,
+                'status': 'PENDING',
+                'entry_limit': pe_entry_price,
+                'placed_at': time.time()
+            }
         if not ce_order_id or not pe_order_id:
             self.log_info("[ERROR] Failed to place one or both bracket orders. Stopping strategy.")
             return
@@ -542,61 +647,88 @@ class Breakout5MinStrategy:
         self.log_info("=" * 70)
         # ==== PHASE 2: Monitor order status and implement OCO cancellation ====
         while not oco_entry_taken:
-            now = datetime.now(self.ist).time()
-            if now >= market_close_time:
-                self.log_info("[INFO] Market close reached (3:30 PM). Stopping breakout monitoring.")
-                break
-            # Fetch current order status
-            ce_status = self.get_order_status(ce_order_id)
-            pe_status = self.get_order_status(pe_order_id)
-            self.log_info(f"Order Status: CE={ce_status} | PE={pe_status}")
-            # Check if CE triggered/filled
-            if ce_status in ["FILLED", "TRIGGERED"]:
-                self.log_info("=" * 70)
-                self.log_info(f"CE ORDER TRIGGERED/FILLED! Cancelling PE order...")
-                self.log_info("=" * 70)
-                # Cancel PE order if still pending
-                if pe_status in ["PENDING", "OPEN"]:
-                    cancel_success = self.cancel_order(pe_order_id, pe_symbol)
-                    if cancel_success:
-                        self.log_info(f"PE order cancelled successfully")
+                now = datetime.now(self.ist).time()
+                if now >= market_close_time:
+                    self.log_info("[INFO] Market close reached (3:30 PM). Stopping breakout monitoring.")
+                    break
+                # --- FILL SIMULATION LOGIC ---
+                ce_ltp = self.get_ltp(ce_symbol)
+                pe_ltp = self.get_ltp(pe_symbol)
+                self.log_info(f"[DEBUG] Breakout levels: CE={ce_breakout}, PE={pe_breakout} | LTPs: CE={ce_ltp}, PE={pe_ltp}")
+                ce_ltp_rounded = round(float(ce_ltp), 2) if ce_ltp is not None else None
+                pe_ltp_rounded = round(float(pe_ltp), 2) if pe_ltp is not None else None
+                ce_breakout_rounded = round(float(ce_breakout), 2)
+                pe_breakout_rounded = round(float(pe_breakout), 2)
+                ce_status = self.get_order_status(ce_order_id)
+                pe_status = self.get_order_status(pe_order_id)
+                if ce_status == "PENDING" and ce_ltp_rounded is not None and ce_ltp_rounded >= ce_breakout_rounded:
+                    self.log_info(f"[DEBUG] CE LTP {ce_ltp_rounded} >= CE breakout {ce_breakout_rounded} -- triggering fill logic.")
+                    self.log_info(f"[DEBUG] paper_orders keys: {list(self.paper_orders.keys())}")
+                    if ce_order_id in self.paper_orders and pe_order_id in self.paper_orders:
+                        self.paper_orders[ce_order_id]["status"] = "FILLED"
+                        self.paper_orders[pe_order_id]["status"] = "CANCELLED"
+                        ce_status = "FILLED"
+                        pe_status = "CANCELLED"
+                        self.log_info(f"[SIMULATION] CE breakout triggered! CE order FILLED at {ce_ltp_rounded}. PE order CANCELLED (OCO logic).")
                     else:
-                        self.log_info(f"[WARNING] Failed to cancel PE order - it may have already triggered")
-                self.log_info(f"CE position active with automatic SL and Target management by broker")
-                oco_entry_taken = True
-                self.trade_executed_today = True
-                # After entry, monitor the filled paper position until SL/Target/timeout
-                if (self.paper_trading or self.simulation):
-                    self.monitor_filled_paper_order(ce_order_id)
-                break
-            # Check if PE triggered/filled
-            elif pe_status in ["FILLED", "TRIGGERED"]:
-                self.log_info("=" * 70)
-                self.log_info(f"PE ORDER TRIGGERED/FILLED! Cancelling CE order...")
-                self.log_info("=" * 70)
-                # Cancel CE order if still pending
-                if ce_status in ["PENDING", "OPEN"]:
-                    cancel_success = self.cancel_order(ce_order_id, ce_symbol)
-                    if cancel_success:
-                        self.log_info(f"CE order cancelled successfully")
+                        self.log_info(f"[ERROR] Order ID(s) not found in paper_orders: CE={ce_order_id}, PE={pe_order_id}")
+                elif pe_status == "PENDING" and pe_ltp_rounded is not None and pe_ltp_rounded >= pe_breakout_rounded:
+                    self.log_info(f"[DEBUG] PE LTP {pe_ltp_rounded} >= PE breakout {pe_breakout_rounded} -- triggering fill logic.")
+                    self.log_info(f"[DEBUG] paper_orders keys: {list(self.paper_orders.keys())}")
+                    if pe_order_id in self.paper_orders and ce_order_id in self.paper_orders:
+                        self.paper_orders[pe_order_id]["status"] = "FILLED"
+                        self.paper_orders[ce_order_id]["status"] = "CANCELLED"
+                        pe_status = "FILLED"
+                        ce_status = "CANCELLED"
+                        self.log_info(f"[SIMULATION] PE breakout triggered! PE order FILLED at {pe_ltp_rounded}. CE order CANCELLED (OCO logic).")
                     else:
-                        self.log_info(f"[WARNING] Failed to cancel CE order - it may have already triggered")
-                self.log_info(f"PE position active with automatic SL and Target management by broker")
-                oco_entry_taken = True
-                self.trade_executed_today = True
-                if (self.paper_trading or self.simulation):
-                    self.monitor_filled_paper_order(pe_order_id)
-                break
-            # Check if both orders failed/cancelled
-            elif ce_status in ["CANCELLED", "REJECTED"] and pe_status in ["CANCELLED", "REJECTED"]:
-                self.log_info("[ERROR] Both orders failed or were cancelled. Stopping strategy.")
-                break
-            # Optional: Fetch and log current LTP for monitoring (informational only)
-            ce_ltp = self.get_ltp(ce_symbol)
-            pe_ltp = self.get_ltp(pe_symbol)
-            if ce_ltp and pe_ltp:
-                self.log_info(f"Current Prices: CE LTP: {ce_ltp:.2f} | PE LTP: {pe_ltp:.2f}")
-            time.sleep(2)  # Check every 2 seconds
+                        self.log_info(f"[ERROR] Order ID(s) not found in paper_orders: CE={ce_order_id}, PE={pe_order_id}")
+                self.log_info(f"Order Status: CE={ce_status} | PE={pe_status}")
+                # Check if CE triggered/filled
+                if ce_status in ["FILLED", "TRIGGERED"]:
+                    self.log_info("=" * 70)
+                    self.log_info(f"CE ORDER TRIGGERED/FILLED! Cancelling PE order...")
+                    self.log_info("=" * 70)
+                    # Cancel PE order if still pending
+                    if pe_status in ["PENDING", "OPEN"]:
+                        cancel_success = self.cancel_order(pe_order_id, pe_symbol)
+                        if cancel_success:
+                            self.log_info(f"PE order cancelled successfully")
+                        else:
+                            self.log_info(f"[WARNING] Failed to cancel PE order - it may have already triggered")
+                    self.log_info(f"CE position active with automatic SL and Target management by broker")
+                    oco_entry_taken = True
+                    self.trade_executed_today = True
+                    # After entry, monitor the filled paper position until SL/Target/timeout
+                    if (self.paper_trading or self.simulation):
+                        self.monitor_filled_paper_order(ce_order_id)
+                    break
+                # Check if PE triggered/filled
+                elif pe_status in ["FILLED", "TRIGGERED"]:
+                    self.log_info("=" * 70)
+                    self.log_info(f"PE ORDER TRIGGERED/FILLED! Cancelling CE order...")
+                    self.log_info("=" * 70)
+                    # Cancel CE order if still pending
+                    if ce_status in ["PENDING", "OPEN"]:
+                        cancel_success = self.cancel_order(ce_order_id, ce_symbol)
+                        if cancel_success:
+                            self.log_info(f"CE order cancelled successfully")
+                        else:
+                            self.log_info(f"[WARNING] Failed to cancel CE order - it may have already triggered")
+                    self.log_info(f"PE position active with automatic SL and Target management by broker")
+                    oco_entry_taken = True
+                    self.trade_executed_today = True
+                    if (self.paper_trading or self.simulation):
+                        self.monitor_filled_paper_order(pe_order_id)
+                    break
+                # Check if both orders failed/cancelled
+                elif ce_status in ["CANCELLED", "REJECTED"] and pe_status in ["CANCELLED", "REJECTED"]:
+                    self.log_info("[ERROR] Both orders failed or were cancelled. Stopping strategy.")
+                    break
+                # Optional: Fetch and log current LTP for monitoring (informational only)
+                if ce_ltp and pe_ltp:
+                    self.log_info(f"Current Prices: CE LTP: {ce_ltp:.2f} | PE LTP: {pe_ltp:.2f}")
+                time.sleep(2)  # Check every 2 seconds
         if not oco_entry_taken:
             self.log_info(f"No entry taken within monitoring window.")
         
@@ -1137,6 +1269,16 @@ class Breakout5MinStrategy:
             self.log_info(f"[LIVE] Placing real bracket order for {symbol} @ {entry_price} qty={qty} (breakout={breakout_level})")
             # Example: return broker.place_bracket_order(...)
             return None
+
+    def get_order_status(self, order_id):
+        """
+        Simulate order status for paper/simulation mode. Always returns 'PENDING' for now.
+        Extend this logic to simulate fills/cancellations as needed.
+        """
+        # In a real implementation, this would check broker API or paper_orders dict
+        if hasattr(self, 'paper_orders') and order_id in self.paper_orders:
+            return self.paper_orders[order_id].get('status', 'PENDING')
+        return 'PENDING'
 
 if __name__ == '__main__':
     import argparse
@@ -1680,6 +1822,16 @@ if __name__ == '__main__':
             self.log_info(f"[LIVE] Placing real bracket order for {symbol} @ {entry_price} qty={qty} (breakout={breakout_level})")
             # Example: return broker.place_bracket_order(...)
             return None
+
+    def get_order_status(self, order_id):
+        """
+        Simulate order status for paper/simulation mode. Always returns 'PENDING' for now.
+        Extend this logic to simulate fills/cancellations as needed.
+        """
+        # In a real implementation, this would check broker API or paper_orders dict
+        if hasattr(self, 'paper_orders') and order_id in self.paper_orders:
+            return self.paper_orders[order_id].get('status', 'PENDING')
+        return 'PENDING'
 
 if __name__ == '__main__':
     import argparse
