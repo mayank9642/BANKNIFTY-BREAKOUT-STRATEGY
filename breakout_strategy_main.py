@@ -139,7 +139,7 @@ class Breakout5MinStrategy:
             pnl_pct = (pnl / (entry_price * qty)) * 100 if entry_price else 0
             max_up_pct = (max_up_pnl / (entry_price * qty)) * 100 if entry_price else 0
             max_down_pct = (max_down_pnl / (entry_price * qty)) * 100 if entry_price else 0
-            self.log_info(f"[PAPER STATUS] {symbol} | LTP: {ltp:.2f} | Entry: {entry_price:.2f} | SL: {sl:.2f} | Target: {target:.2f} | PnL: {pnl:.2f}")
+            self.log_info(f"[PAPER STATUS] {symbol} | LTP: {ltp:.2f} | Entry: {entry_price:.2f} | SL: {sl:.2f} | Target: {target:.2f} | PnL: {pnl:.2f} | MaxUp: {max_up_pnl:.2f} ({max_up_pct:.2f}%) | MaxDn: {max_down_pnl:.2f} ({max_down_pct:.2f}%)")
             # Exit on SL/Target hit
             if ltp <= sl:
                 self.log_info(f"[PAPER EXIT] Stop Loss hit at {ltp:.2f}")
@@ -180,6 +180,17 @@ class Breakout5MinStrategy:
         self.log_info(f"[BALANCE] Updated Balance: {self.current_balance:,.2f} (Change: {net_pnl:+.2f})")
         win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
         self.log_info(f"[PERF] Performance: {self.winning_trades}W/{self.losing_trades}L | Win Rate: {win_rate:.1f}% | Net P&L: {self.total_profit_loss:+,.2f}")
+        # Log to Excel/CSV after each trade
+        self.log_paper_trade_to_excel(
+            order,
+            symbol,
+            entry_price,
+            exit_price,
+            qty,
+            net_pnl,
+            exit_reason
+        )
+    # (Removed duplicate call to log_paper_trade_to_excel outside function body)
     def __init__(self, simulation=False, paper_trading=False):
         self.simulation = simulation
         self.paper_trading = paper_trading
