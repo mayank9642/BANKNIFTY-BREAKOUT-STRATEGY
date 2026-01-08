@@ -124,10 +124,9 @@ class Breakout5MinStrategy:
         max_down_pnl = float('inf')
         exit_price = None
         trade_active = True
-        tick_count = 0
         filled_time = datetime.now(self.ist).strftime('%H:%M:%S')
         order['filled_time'] = filled_time
-        while trade_active and tick_count < 30:
+        while trade_active:
             ltp = self.get_ltp(symbol)
             try:
                 ltp = float(ltp)
@@ -151,12 +150,7 @@ class Breakout5MinStrategy:
                 exit_price = ltp
                 trade_active = False
                 exit_reason = 'TARGET'
-            tick_count += 1
             time.sleep(1)
-        if trade_active:
-            self.log_info(f"[PAPER EXIT] Monitoring timeout at {ltp:.2f}")
-            exit_price = ltp
-            exit_reason = 'TIMEOUT'
         # Update order with exit details
         order['exit_price'] = exit_price
         order['max_up_pnl'] = max_up_pnl
