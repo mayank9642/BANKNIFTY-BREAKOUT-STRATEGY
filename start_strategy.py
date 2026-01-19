@@ -138,7 +138,7 @@ def run_strategy():
             print(f"⚠️ Could not load config, defaulting to simulation mode: {e}")
             simulation_enabled = True
         
-        from breakout_strategy_main import Breakout5MinStrategy
+        from breakout_strategy_main import Breakout5MinStrategy, archive_strategy_log
         
         if simulation_enabled:
             print("📝 Running in SIMULATION mode - no real trades will be executed")
@@ -148,6 +148,7 @@ def run_strategy():
             strategy = Breakout5MinStrategy(simulation=False, paper_trading=False)
         
         strategy.run()
+        archive_strategy_log()  # Archive the log after the strategy run
         
     except KeyboardInterrupt:
         print("\n🛑 Strategy stopped by user")

@@ -117,8 +117,12 @@ class Breakout5MinStrategy:
         symbol = order.get('symbol', 'UNKNOWN')
         entry_price = order.get('entry_limit', 0)
         qty = order.get('qty', 35)
-        sl = entry_price * 0.95  # Example: 5% SL
-        target = entry_price * 1.15  # Example: 15% Target
+        if entry_price <= 500:
+            sl = entry_price * 0.90  # 10% SL
+            target = entry_price * 1.10  # 10% Target
+        else:
+            sl = entry_price * 0.95  # 5% SL
+            target = entry_price * 1.05  # 5% Target
         trailing_sl = sl
         max_up_pnl = float('-inf')
         max_down_pnl = float('inf')
@@ -150,7 +154,7 @@ class Breakout5MinStrategy:
                 exit_price = ltp
                 trade_active = False
                 exit_reason = 'TARGET'
-            time.sleep(1)
+            time.sleep(0.25)
         # Update order with exit details
         order['exit_price'] = exit_price
         order['max_up_pnl'] = max_up_pnl
@@ -1293,6 +1297,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
     strategy = Breakout5MinStrategy(simulation=args.simulate, paper_trading=args.paper)
     strategy.run()
+    # Archive the log file at the end of the session
+    archive_strategy_log()
 
     def wait_for_market_open(self):
         now = datetime.now(self.ist)
