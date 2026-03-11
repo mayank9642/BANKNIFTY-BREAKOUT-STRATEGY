@@ -1,5 +1,5 @@
 """
-Enhanced Fyers API Authentication Helper
+2Enhanced Fyers API Authentication Helper
 Integrates your existing authentication logic with optional TOTP support
 """
 

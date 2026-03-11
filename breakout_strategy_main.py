@@ -164,21 +164,12 @@ class Breakout5MinStrategy:
         order['trailing_sl'] = trailing_sl
         order['qty'] = qty
         self.paper_orders[order_id] = order
-        # Log trade completion and performance
-        net_pnl = (exit_price - entry_price) * qty if exit_price is not None else 0
-        status = 'PROFIT [WIN]' if net_pnl > 0 else 'LOSS'
-        self.total_trades += 1
-        if net_pnl > 0:
-            self.winning_trades += 1
-        else:
-            self.losing_trades += 1
-        self.total_profit_loss += net_pnl
-        self.log_info(f"[TARGET] Trade #{self.total_trades} completed: {symbol} | Net P&L: {net_pnl:.2f} ({status})")
-        self.current_balance += net_pnl
-        self.log_info(f"[BALANCE] Updated Balance: {self.current_balance:,.2f} (Change: {net_pnl:+.2f})")
-        win_rate = (self.winning_trades / self.total_trades * 100) if self.total_trades > 0 else 0
-        self.log_info(f"[PERF] Performance: {self.winning_trades}W/{self.losing_trades}L | Win Rate: {win_rate:.1f}% | Net P&L: {self.total_profit_loss:+,.2f}")
-        # Log to Excel/CSV after each trade
+        # Log trade completion and update balance/stats using the unified function (includes brokerage deduction)
+        trade_pnl = (exit_price - entry_price) * qty if exit_price is not None else 0
+        self.update_balance_on_trade_completion(pnl=trade_pnl, qty=qty, symbol=symbol)
+
+        # For Excel logging, net_pnl is the raw trade P&L (before brokerage, as expected by log_paper_trade_to_excel)
+        net_pnl = trade_pnl
         self.log_paper_trade_to_excel(
             order,
             symbol,
@@ -226,7 +217,22 @@ class Breakout5MinStrategy:
         
         # Load existing balance from file if it exists
         self.balance_file = 'logs/capital_balance.txt'
+
         self.load_current_balance()
+
+        # Register atexit and signal handlers to always save balance on exit
+        import atexit, signal
+        def _save_balance_on_exit(*args, **kwargs):
+            try:
+                self.save_current_balance()
+            except Exception:
+                pass
+        atexit.register(_save_balance_on_exit)
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                signal.signal(sig, lambda signum, frame: (_save_balance_on_exit(), exit(0)))
+            except Exception:
+                pass
 
     def log_info(self, msg):
         # Replace emojis with ASCII text and remove non-ASCII characters to avoid UnicodeEncodeError
