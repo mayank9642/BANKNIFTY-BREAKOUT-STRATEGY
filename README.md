@@ -1,3 +1,15 @@
+# ✅ SEBI/Fyers API Compliance (April 2026)
+
+This project is fully updated and compliant with the latest SEBI and Fyers API regulations as of April 2026:
+- Single App ID for all transactional APIs
+- Static IP whitelisting
+- Daily 2FA authentication (no refresh token)
+- API rate limits enforced (10/sec, 200/min, 10,000/day)
+- MPP order logic (no market/AMO/offline orders)
+- VIX logging and all compliance features validated
+
+---
+
 # Enhanced 5-Minute Breakout Strategy
 
 A sophisticated algorithmic trading system designed for trading NIFTY and BANKNIFTY options on the Indian stock market. The strategy leverages the first 5-minute candle pattern to identify potential breakout opportunities with comprehensive risk management.

@@ -451,33 +451,46 @@ class Enhanced5MinBreakoutStrategy:
             if self.config['simulation']['enabled']:
                 logging.info(f"SIMULATION: Would execute {direction} trade for {symbol}")
                 return True
-                
-            # Prepare order data
+            # Prepare MPP (Market Protection Price) order data
+            mpp_protection_price = self.calculate_mpp(symbol, direction)
             order_data = {
                 "symbol": symbol,
                 "qty": quantity,
-                "type": 2,  # Market order
+                "type": 5,  # MPP order
                 "side": 1 if direction == 'LONG' else -1,
                 "productType": "INTRADAY",
                 "limitPrice": 0,
                 "stopPrice": 0,
                 "validity": "DAY",
                 "disclosedQty": 0,
-                "offlineOrder": "False"
+                "offlineOrder": False,
+                "protectionPrice": mpp_protection_price
             }
-            
             response = self.fyers.place_order(data=order_data)
-            
             if response['s'] == 'ok':
                 logging.info(f"Order placed successfully: {response['id']}")
                 return True
             else:
                 logging.error(f"Order placement failed: {response}")
                 return False
-                
         except Exception as e:
             logging.error(f"Error executing trade: {e}")
             return False
+
+    def calculate_mpp(self, symbol: str, direction: str) -> float:
+        """Calculate a reasonable Market Protection Price (MPP) for the order."""
+        # Example: 2% away from current price for protection
+        try:
+            ltp = self.get_option_price(symbol)
+            if ltp is None:
+                return 0.0
+            buffer_pct = 0.02  # 2% buffer
+            if direction == 'LONG':
+                return round(ltp * (1 + buffer_pct), 2)
+            else:
+                return round(ltp * (1 - buffer_pct), 2)
+        except Exception:
+            return 0.0
 
     def monitor_breakouts(self):
         """Monitor for breakout conditions and execute trades"""
@@ -533,16 +546,27 @@ class Enhanced5MinBreakoutStrategy:
     def enter_trade(self, symbol: str, direction: str, entry_price: float, index_name: str):
         """Enter a new trade"""
         try:
+
             quantity = self.config['trading']['symbols'][index_name]['quantity']
-            
-            # Calculate stop loss and target
-            stop_loss = self.calculate_stop_loss(entry_price, symbol, direction)
-            target_points = self.config['trading']['risk_management']['target_points']
-            
-            if direction == 'LONG':
-                target = entry_price + target_points
+
+            # --- Dynamic SL/Target based on VIX and premium ---
+            vix = self.get_current_vix() if hasattr(self, 'get_current_vix') else 11  # fallback to 11 if not available
+            logging.info(f"[DEBUG] VIX value used at entry: {vix}")
+            if vix is None:
+                vix = 11
+            if vix < 10:
+                target_pct = 0.07 if entry_price <= 500 else 0.04
+            elif vix < 12:
+                target_pct = 0.10 if entry_price <= 500 else 0.05
             else:
-                target = entry_price - target_points
+                target_pct = 0.12 if entry_price <= 500 else 0.07
+            sl_pct = target_pct
+            if direction == 'LONG':
+                stop_loss = entry_price * (1 - sl_pct)
+                target = entry_price * (1 + target_pct)
+            else:
+                stop_loss = entry_price * (1 + sl_pct)
+                target = entry_price * (1 - target_pct)
             
             # Execute trade
             if self.execute_trade(symbol, direction, quantity, entry_price):
@@ -669,24 +693,23 @@ class Enhanced5MinBreakoutStrategy:
         try:
             if self.config['simulation']['enabled']:
                 return True
-            
-            # Execute exit order through API
+            # Execute exit order through API (MPP)
+            mpp_protection_price = self.calculate_mpp(trade.symbol, 'SHORT' if trade.direction == 'LONG' else 'LONG')
             order_data = {
                 "symbol": trade.symbol,
                 "qty": quantity,
-                "type": 2,  # Market order
+                "type": 5,  # MPP order
                 "side": -1 if trade.direction == 'LONG' else 1,  # Opposite side
                 "productType": "INTRADAY",
                 "limitPrice": 0,
                 "stopPrice": 0,
                 "validity": "DAY",
                 "disclosedQty": 0,
-                "offlineOrder": "False"
+                "offlineOrder": False,
+                "protectionPrice": mpp_protection_price
             }
-            
             response = self.fyers.place_order(data=order_data)
             return response['s'] == 'ok'
-            
         except Exception as e:
             logging.error(f"Error executing partial exit: {e}")
             return False

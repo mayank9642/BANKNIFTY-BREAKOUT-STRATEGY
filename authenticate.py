@@ -151,10 +151,9 @@ class FyersAuthenticator:
             logging.error(f"Failed to generate access token: {str(e)}")
             return None
     
-    def authenticate(self, use_totp=False, force_refresh=False):
-        """Complete authentication process with enhanced options"""
-        print("=== Enhanced Fyers API Authentication ===\n")
-        
+    def authenticate(self, use_totp=False):
+        """Complete authentication process with daily 2FA enforcement"""
+        print("=== Fyers API Authentication (Daily 2FA Required) ===\n")
         # Check if we already have credentials
         if not self.config['fyers']['client_id'] or self.config['fyers']['client_id'] == "YOUR_FYERS_CLIENT_ID":
             print("Please update your Fyers API credentials in config.yaml:")
@@ -163,44 +162,15 @@ class FyersAuthenticator:
             print("3. Optional: totp_key for TOTP authentication")
             print("\nYou can find these in your Fyers API dashboard.")
             return False
-        
-        # Check if token already exists and is valid
-        if not force_refresh and self.config['fyers'].get('access_token') and self.config['fyers'].get('token_expiry'):
-            try:
-                expiry_time = datetime.datetime.strptime(self.config['fyers']['token_expiry'], '%Y-%m-%d %H:%M:%S')
-                if datetime.datetime.now() < expiry_time:
-                    print("✅ Valid access token already exists!")
-                    # Test the existing token
-                    fyers = fyersModel.FyersModel(
-                        client_id=self.config['fyers']['client_id'],
-                        token=self.config['fyers']['access_token'],
-                        log_path=""
-                    )
-                    profile = fyers.get_profile()
-                    if profile['s'] == 'ok':
-                        print(f"✅ Token verified successfully!")
-                        print(f"User: {profile['data']['name']}")
-                        print(f"Valid until: {self.config['fyers']['token_expiry']}")
-                        return True
-                    else:
-                        print("❌ Existing token is invalid. Generating new token...")
-                else:
-                    print("⚠️ Existing token has expired. Generating new token...")
-            except Exception as e:
-                print(f"⚠️ Error checking existing token: {e}. Generating new token...")
-        
         try:
-            # Generate new access token
+            # Always require new access token (no reuse/refresh)
             access_token = self.generate_access_token(use_totp)
-            
             if access_token:
-                # Test the new token
                 fyers = fyersModel.FyersModel(
                     client_id=self.config['fyers']['client_id'],
                     token=access_token,
                     log_path=""
                 )
-                
                 profile = fyers.get_profile()
                 if profile['s'] == 'ok':
                     print(f"\n✅ Authentication successful!")
@@ -218,6 +188,10 @@ class FyersAuthenticator:
             else:
                 print("❌ Failed to generate access token.")
                 return False
+        except Exception as e:
+            print(f"Error during authentication: {str(e)}")
+            logging.error(f"Failed to authenticate: {str(e)}")
+            return False
                 
         except Exception as e:
             print(f"❌ Authentication error: {e}")
@@ -228,7 +202,6 @@ def main():
     try:
         import argparse
         parser = argparse.ArgumentParser(description="Fyers API Authentication Helper")
-        parser.add_argument('--force', action='store_true', help='Force refresh of access token')
         args = parser.parse_args()
 
         print("🔐 Fyers API Authentication Options:")
@@ -243,12 +216,8 @@ def main():
             print("Make sure you have configured 'totp_key' in your config.yaml")
             print("Install pyotp if not already installed: pip install pyotp")
 
-        force_refresh = args.force
-        if not force_refresh:
-            force_prompt = input("Force token refresh even if valid? (y/n): ").strip().lower()
-            force_refresh = force_prompt == 'y'
         authenticator = FyersAuthenticator()
-        success = authenticator.authenticate(use_totp=use_totp, force_refresh=force_refresh)
+        success = authenticator.authenticate(use_totp=use_totp)
         if success:
             print("\n🎉 Authentication completed successfully!")
             print("📊 You're ready to run the strategy!")
@@ -262,7 +231,6 @@ def main():
             print("   1. Check your API credentials in config.yaml")
             print("   2. Ensure your Fyers account has API access enabled")
             print("   3. Verify redirect URI matches your Fyers app settings")
-            
     except Exception as e:
         print(f"❌ Error: {e}")
 

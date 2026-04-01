@@ -117,12 +117,20 @@ class Breakout5MinStrategy:
         symbol = order.get('symbol', 'UNKNOWN')
         entry_price = order.get('entry_limit', 0)
         qty = order.get('qty', 35)
-        if entry_price <= 500:
-            sl = entry_price * 0.90  # 10% SL
-            target = entry_price * 1.10  # 10% Target
+        # --- Dynamic SL/Target based on VIX and premium ---
+        vix = self.get_current_vix() if hasattr(self, 'get_current_vix') else 11  # fallback to 11 if not available
+        self.log_info(f"[DEBUG] VIX value used at entry: {vix}")
+        if vix is None:
+            vix = 11
+        if vix < 10:
+            target_pct = 0.07 if entry_price <= 500 else 0.04
+        elif vix < 12:
+            target_pct = 0.10 if entry_price <= 500 else 0.05
         else:
-            sl = entry_price * 0.95  # 5% SL
-            target = entry_price * 1.05  # 5% Target
+            target_pct = 0.12 if entry_price <= 500 else 0.07
+        sl_pct = target_pct
+        sl = entry_price * (1 - sl_pct)
+        target = entry_price * (1 + target_pct)
         trailing_sl = sl
         max_up_pnl = float('-inf')
         max_down_pnl = float('inf')
