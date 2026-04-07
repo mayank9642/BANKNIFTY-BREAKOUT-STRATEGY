@@ -423,7 +423,33 @@ class Breakout5MinStrategy:
     def run(self):
         archive_strategy_log()
         self.log_info('Starting 5-min breakout strategy (BANKNIFTY).')
+
+        # --- Robust market open/holiday check ---
+        now = datetime.now(self.ist)
+        current_time = now.time()
+        current_date = now.date()
+        # Check if it's a weekend
+        if now.weekday() >= 5:  # Saturday=5, Sunday=6
+            self.log_info('Market is closed (weekend). Exiting strategy.')
+            return
+        # Check if it's a market holiday
+        holidays = self.config.get('market_holidays', [])
+        if current_date.strftime('%Y-%m-%d') in holidays:
+            self.log_info('Market is closed (holiday). Exiting strategy.')
+            return
+        # Always wait for market open if before 09:15, regardless of mode
+        market_open = datetime.strptime(self.config['timing']['market_open_time'], '%H:%M').time()
+        if current_time < market_open:
+            self.log_info(f'Market not open yet (current time: {current_time}). Waiting for market to open...')
         self.wait_for_market_open()
+        # After market open, check if within trading hours
+        now = datetime.now(self.ist)
+        current_time = now.time()
+        market_close = datetime.strptime(self.config['timing']['trading_end_time'], '%H:%M').time()
+        if not (market_open <= current_time <= market_close):
+            self.log_info(f'Market is closed (current time: {current_time}). Exiting strategy.')
+            return
+
         self.wait_until_920()
         t = threading.Thread(target=self.monitor_index, args=(self.banknifty_symbol, self.banknifty_qty, 'BANKNIFTY'), daemon=True)
         t.start()
