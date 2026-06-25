@@ -41,19 +41,61 @@ def get_fyers_client():
 
 def get_ltp(fyers_client, symbol):
     """Get Last Traded Price for a symbol"""
-    try:
-        if not fyers_client:
-            return None
-            
-        response = fyers_client.quotes(data={"symbols": symbol})
-        if response.get('s') == 'ok' and response.get('d'):
-            return response['d'][0]['v']['lp']
-        else:
-            logging.warning(f"Failed to get LTP for {symbol}: {response}")
-            return None
-    except Exception as e:
-        logging.error(f"Error getting LTP for {symbol}: {e}")
+    # Improved LTP fetch with retries, exponential backoff and 429 handling
+    if not fyers_client:
         return None
+
+    max_retries = 4
+    backoff = 0.5
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = fyers_client.quotes(data={"symbols": symbol})
+
+            # If the API returns a structured error, inspect and handle 429 specifically
+            if isinstance(response, dict) and response.get('s') == 'error':
+                code = response.get('code')
+                # Rate limited or bad request - backoff longer
+                logging.warning(f"Failed to get LTP for {symbol} (API error) attempt {attempt}/{max_retries}: {response}")
+                if code == 429:
+                    # Respectful backoff on rate limit
+                    time.sleep(backoff * 4)
+                else:
+                    time.sleep(backoff)
+                backoff *= 2
+                continue
+
+            if response and response.get('s') == 'ok' and response.get('d'):
+                # Some responses use 'lp' or 'ltp'
+                val = response['d'][0].get('v', {})
+                if isinstance(val, dict):
+                    ltp = val.get('lp') or val.get('ltp') or val.get('lt')
+                else:
+                    ltp = None
+
+                if ltp is not None:
+                    try:
+                        return float(ltp)
+                    except Exception:
+                        return None
+
+            # Unexpected response - retry a few times
+            logging.debug(f"Unexpected LTP response for {symbol} (attempt {attempt}/{max_retries}): {response}")
+            time.sleep(backoff)
+            backoff *= 2
+        except ValueError as e:
+            # JSON decode or parsing issue from underlying library
+            logging.error(f"JSON parsing error getting LTP for {symbol} (attempt {attempt}/{max_retries}): {e}")
+            time.sleep(backoff)
+            backoff *= 2
+        except Exception as e:
+            # Network errors, timeouts etc.
+            logging.error(f"Error getting LTP for {symbol} (attempt {attempt}/{max_retries}): {e}")
+            time.sleep(backoff)
+            backoff *= 2
+
+    # All retries exhausted
+    logging.warning(f"Exhausted LTP fetch retries for {symbol}. Returning None")
+    return None
 
 class WebSocketManager:
     """Manage WebSocket connections for real-time data"""

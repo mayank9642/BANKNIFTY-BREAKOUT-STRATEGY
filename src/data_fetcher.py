@@ -139,26 +139,53 @@ class DataFetcher:
     @apply_symbol_formatting
     def get_ltp_enhanced(self, symbol: str) -> Optional[float]:
         """Get LTP with retry mechanism"""
-        max_retries = 3
-        
-        for attempt in range(max_retries):
+        max_retries = 4
+        backoff = 0.5
+        last_warn = None
+
+        for attempt in range(1, max_retries + 1):
             try:
                 response = self.fyers.quotes(data={"symbols": symbol})
-                
-                if response.get('s') == 'ok' and response.get('d'):
-                    # Use 'lp' instead of 'ltp' based on actual API response format
-                    ltp = response['d'][0]['v'].get('lp') or response['d'][0]['v'].get('ltp')
-                    if ltp and ltp > 0:
-                        return float(ltp)
-                
-                if attempt < max_retries - 1:
-                    time.sleep(1)  # Wait before retry
-                    
+
+                if isinstance(response, dict) and response.get('s') == 'error':
+                    code = response.get('code')
+                    # on rate-limit, sleep longer
+                    if code == 429:
+                        # Log once per symbol per run to avoid spam
+                        if last_warn != 429:
+                            self.logger.warning(f"Rate limited fetching LTP for {symbol}: {response}")
+                            last_warn = 429
+                        time.sleep(backoff * 4)
+                    else:
+                        self.logger.debug(f"API error fetching LTP for {symbol}: {response}")
+                        time.sleep(backoff)
+                    backoff *= 2
+                    continue
+
+                if response and response.get('s') == 'ok' and response.get('d'):
+                    v = response['d'][0].get('v', {})
+                    ltp = None
+                    if isinstance(v, dict):
+                        ltp = v.get('lp') or v.get('ltp') or v.get('lt')
+                    if ltp is not None:
+                        try:
+                            ltp_val = float(ltp)
+                            if ltp_val > 0:
+                                return ltp_val
+                        except Exception:
+                            pass
+
+                # unexpected result -> retry
+                self.logger.debug(f"Unexpected LTP response for {symbol} (attempt {attempt}/{max_retries}): {response}")
+                time.sleep(backoff)
+                backoff *= 2
+
             except Exception as e:
-                self.logger.error(f"Error getting LTP for {symbol} (attempt {attempt + 1}): {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(1)
-        
+                # Avoid spamming error logs for transient network issues
+                self.logger.error(f"Error getting LTP for {symbol} (attempt {attempt}/{max_retries}): {e}")
+                time.sleep(backoff)
+                backoff *= 2
+
         return None
     
     def get_option_symbols(self, index_name: str, spot_price: float) -> Optional[Dict]:

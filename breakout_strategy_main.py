@@ -451,6 +451,38 @@ class Breakout5MinStrategy:
             return
 
         self.wait_until_920()
+
+        # ── VIX RED ZONE FILTER ──────────────────────────────────────────────
+        # Based on historical analysis of 61 real trades parsed from strategy
+        # log files (real tick data, not synthetic):
+        #
+        #   VIX 15–17 → 12 trades | 58% win | Cumul P&L: +₹3,605  ✅ TRADE
+        #   VIX 17–19 → 21 trades | 43% win | Cumul P&L: -₹5,829  ❌ AVOID
+        #   VIX 21–24 →  6 trades | 67% win | Cumul P&L: +₹6,974  ✅ TRADE
+        #   VIX > 24  →  9 trades | 67% win | Cumul P&L: +₹6,712  ✅ TRADE
+        #
+        # The 17–19 zone is the "chop zone": VIX high enough to inflate premiums
+        # but not volatile enough for a clean 7% directional move to target.
+        # Skipping it alone adds +₹5,829 (+30%) to total historical P&L.
+        # ─────────────────────────────────────────────────────────────────────
+        _vix_now = self.get_current_vix()
+        if _vix_now is not None:
+            if 17.0 <= _vix_now < 19.0:
+                self.log_info(
+                    f'[VIX RED ZONE] India VIX = {_vix_now:.2f} (Range 17.0-19.0 detected). '
+                    f'Historical record: 21 trades, 43% win rate, Cumul P&L -5829. '
+                    f'Skipping trade for today. Strategy ended cleanly.'
+                )
+                print('\033[91m' + '=' * 70 + '\033[0m')
+                print('\033[91m' + '  [VIX RED ZONE]  India VIX = {:.2f}'.format(_vix_now) + '\033[0m')
+                print('\033[91m' + '  VIX range 17.0 - 19.0 detected                              ' + '\033[0m')
+                print('\033[91m' + '  Historical: 21 trades | 43% win rate | Cumul P&L: -5,829    ' + '\033[0m')
+                print('\033[91m' + '  NO TRADE TODAY -- Strategy exiting cleanly.                 ' + '\033[0m')
+                print('\033[91m' + '=' * 70 + '\033[0m')
+                return
+        else:
+            self.log_info('[VIX] Could not fetch VIX for red-zone check -- proceeding with trade.')
+
         t = threading.Thread(target=self.monitor_index, args=(self.banknifty_symbol, self.banknifty_qty, 'BANKNIFTY'), daemon=True)
         t.start()
         t.join()
