@@ -162,7 +162,7 @@ class Breakout5MinStrategy:
                 exit_price = ltp
                 trade_active = False
                 exit_reason = 'TARGET'
-            time.sleep(0.25)
+            time.sleep(3)  # Poll every 3 seconds (20 calls/min) — was 0.25s (240/min)
         # Update order with exit details
         order['exit_price'] = exit_price
         order['max_up_pnl'] = max_up_pnl
@@ -809,7 +809,7 @@ class Breakout5MinStrategy:
                 # Optional: Fetch and log current LTP for monitoring (informational only)
                 if ce_ltp and pe_ltp:
                     self.log_info(f"Current Prices: CE LTP: {ce_ltp:.2f} | PE LTP: {pe_ltp:.2f}")
-                time.sleep(2)  # Check every 2 seconds
+                time.sleep(5)  # Check every 5 seconds (24 calls/min for CE+PE) — was 2s (60/min)
         if not oco_entry_taken:
             self.log_info(f"No entry taken within monitoring window.")
         

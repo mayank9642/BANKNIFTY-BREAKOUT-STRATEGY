@@ -136,7 +136,6 @@ class DataFetcher:
             self.logger.error(f"Error getting first 5min candle for {symbol}: {e}")
             return None
     
-    @apply_symbol_formatting
     def get_ltp_enhanced(self, symbol: str) -> Optional[float]:
         """Get LTP with retry mechanism"""
         max_retries = 4
