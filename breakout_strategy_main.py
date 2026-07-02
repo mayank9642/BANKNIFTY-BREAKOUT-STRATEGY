@@ -162,7 +162,7 @@ class Breakout5MinStrategy:
                 exit_price = ltp
                 trade_active = False
                 exit_reason = 'TARGET'
-            time.sleep(3)  # Poll every 3 seconds (20 calls/min) — was 0.25s (240/min)
+            time.sleep(2)  # Poll every 2 seconds (30 calls/min) — Fyers limit: 200/min
         # Update order with exit details
         order['exit_price'] = exit_price
         order['max_up_pnl'] = max_up_pnl
@@ -488,7 +488,8 @@ class Breakout5MinStrategy:
         t.join()
 
     def wait_for_market_open(self):
-        if self.simulation:
+        # Skip only in pure simulation (backtesting). Paper trading must wait for real market open.
+        if self.simulation and not self.paper_trading:
             self.log_info('[SIMULATION] Skipping market open wait.')
             return
         now = datetime.now(self.ist)
@@ -499,7 +500,8 @@ class Breakout5MinStrategy:
             now = datetime.now(self.ist)
 
     def wait_until_920(self):
-        if self.simulation:
+        # Skip only in pure simulation (backtesting). Paper trading must wait for 09:20 candle.
+        if self.simulation and not self.paper_trading:
             self.log_info('[SIMULATION] Skipping 9:20 wait. Starting immediately.')
             return
         now = datetime.now(self.ist)
@@ -809,7 +811,7 @@ class Breakout5MinStrategy:
                 # Optional: Fetch and log current LTP for monitoring (informational only)
                 if ce_ltp and pe_ltp:
                     self.log_info(f"Current Prices: CE LTP: {ce_ltp:.2f} | PE LTP: {pe_ltp:.2f}")
-                time.sleep(5)  # Check every 5 seconds (24 calls/min for CE+PE) — was 2s (60/min)
+                time.sleep(2)  # Poll every 2s (60 calls/min for CE+PE) — Fyers limit: 200/min
         if not oco_entry_taken:
             self.log_info(f"No entry taken within monitoring window.")
         
