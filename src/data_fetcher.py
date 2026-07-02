@@ -187,6 +187,47 @@ class DataFetcher:
 
         return None
     
+    def get_ltp_batch(self, symbols: list) -> dict:
+        """Fetch LTP for multiple symbols in a SINGLE API call.
+        Returns dict: {symbol: float_ltp}.  Missing/failed symbols are absent.
+        """
+        if not self.fyers or not symbols:
+            return {}
+        symbols_str = ",".join(symbols)
+        max_retries = 4
+        backoff = 0.5
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = self.fyers.quotes(data={"symbols": symbols_str})
+                if isinstance(response, dict) and response.get('s') == 'error':
+                    code = response.get('code')
+                    if code == 429:
+                        self.logger.warning(f"Rate limited on batch LTP attempt {attempt}/{max_retries}: {response}")
+                        time.sleep(backoff * 4)
+                    else:
+                        time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                if response and response.get('s') == 'ok' and response.get('d'):
+                    result = {}
+                    for item in response['d']:
+                        sym = item.get('n')
+                        v = item.get('v', {})
+                        if isinstance(v, dict) and sym:
+                            raw = v.get('lp') or v.get('ltp') or v.get('lt')
+                            try:
+                                result[sym] = float(raw)
+                            except (TypeError, ValueError):
+                                pass
+                    return result
+                time.sleep(backoff)
+                backoff *= 2
+            except Exception as e:
+                self.logger.error(f"Error in batch LTP attempt {attempt}/{max_retries}: {e}")
+                time.sleep(backoff)
+                backoff *= 2
+        return {}
+
     def get_option_symbols(self, index_name: str, spot_price: float) -> Optional[Dict]:
         """Generate option symbols for ATM, ITM, OTM strikes with proper formatting"""
         try:

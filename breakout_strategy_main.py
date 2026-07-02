@@ -8,7 +8,7 @@ import threading
 from datetime import datetime, timedelta
 from src.config import load_config
 from src.token_helper import ensure_valid_token
-from src.fyers_api_utils import get_fyers_client, start_market_data_websocket, get_ltp
+from src.fyers_api_utils import get_fyers_client, start_market_data_websocket, get_ltp, get_ltp_batch
 from src.data_fetcher import DataFetcher
 from src.symbol_formatter import convert_option_symbol_format, generate_option_symbol
 
@@ -162,7 +162,7 @@ class Breakout5MinStrategy:
                 exit_price = ltp
                 trade_active = False
                 exit_reason = 'TARGET'
-            time.sleep(2)  # Poll every 2 seconds (30 calls/min) — Fyers limit: 200/min
+            time.sleep(0.5)  # 1 call/0.5s = 120/min (60% of 200/min Fyers limit)
         # Update order with exit details
         order['exit_price'] = exit_price
         order['max_up_pnl'] = max_up_pnl
@@ -658,6 +658,28 @@ class Breakout5MinStrategy:
         # Dummy websocket setup
         pass
 
+    def get_ltp_batch(self, symbols):
+        """Fetch LTP for multiple symbols in ONE API call (Fyers supports up to 50 symbols).
+        Returns dict: {symbol: float_ltp}. Missing symbols absent from dict.
+        In pure simulation (backtesting) returns 100.0 per symbol without calling API.
+        """
+        if self.simulation and not self.paper_trading:
+            return {s: 100.0 for s in symbols}
+        # Prefer DataFetcher batch method (has retry + rate-limit handling)
+        if self.data_fetcher:
+            try:
+                result = self.data_fetcher.get_ltp_batch(symbols)
+                if result:
+                    return result
+            except Exception as e:
+                self.log_info(f"[ERROR] DataFetcher batch LTP failed: {e}")
+        # Fallback to fyers_api_utils batch function
+        try:
+            return get_ltp_batch(self.fyers, symbols)
+        except Exception as e:
+            self.log_info(f"Error in batch LTP for {symbols}: {e}")
+            return {}
+
     def monitor_index(self, symbol, qty, index_name):
         candle = self.fetch_5min_candle(symbol)
         if not candle:
@@ -735,8 +757,10 @@ class Breakout5MinStrategy:
                     self.log_info("[INFO] Market close reached (3:30 PM). Stopping breakout monitoring.")
                     break
                 # --- FILL SIMULATION LOGIC ---
-                ce_ltp = self.get_ltp(ce_symbol)
-                pe_ltp = self.get_ltp(pe_symbol)
+                # Batch fetch CE+PE in ONE API call (halves quota usage vs two separate calls)
+                _batch = self.get_ltp_batch([ce_symbol, pe_symbol])
+                ce_ltp = _batch.get(ce_symbol)
+                pe_ltp = _batch.get(pe_symbol)
                 self.log_info(f"[DEBUG] Breakout levels: CE={ce_breakout}, PE={pe_breakout} | LTPs: CE={ce_ltp}, PE={pe_ltp}")
                 ce_ltp_rounded = round(float(ce_ltp), 2) if ce_ltp is not None else None
                 pe_ltp_rounded = round(float(pe_ltp), 2) if pe_ltp is not None else None
@@ -811,7 +835,7 @@ class Breakout5MinStrategy:
                 # Optional: Fetch and log current LTP for monitoring (informational only)
                 if ce_ltp and pe_ltp:
                     self.log_info(f"Current Prices: CE LTP: {ce_ltp:.2f} | PE LTP: {pe_ltp:.2f}")
-                time.sleep(2)  # Poll every 2s (60 calls/min for CE+PE) — Fyers limit: 200/min
+                time.sleep(0.5)  # 1 batch call/0.5s = 120/min (60% of 200/min Fyers limit)
         if not oco_entry_taken:
             self.log_info(f"No entry taken within monitoring window.")
         

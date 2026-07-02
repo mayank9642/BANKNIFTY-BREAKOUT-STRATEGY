@@ -97,6 +97,54 @@ def get_ltp(fyers_client, symbol):
     logging.warning(f"Exhausted LTP fetch retries for {symbol}. Returning None")
     return None
 
+def get_ltp_batch(fyers_client, symbols):
+    """Fetch LTP for multiple symbols in a SINGLE API call (Fyers supports up to 50).
+    Returns dict: {symbol_string: float_ltp}.  Missing/failed symbols are absent from dict.
+    symbols: list of symbol strings, e.g. ['NSE:BANKNIFTY26JUL58200CE', 'NSE:BANKNIFTY26JUL58100PE']
+    """
+    if not fyers_client or not symbols:
+        return {}
+
+    symbols_str = ",".join(symbols) if isinstance(symbols, list) else symbols
+
+    max_retries = 4
+    backoff = 0.5
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = fyers_client.quotes(data={"symbols": symbols_str})
+
+            if isinstance(response, dict) and response.get('s') == 'error':
+                code = response.get('code')
+                logging.warning(f"Batch LTP error attempt {attempt}/{max_retries}: {response}")
+                time.sleep(backoff * 4 if code == 429 else backoff)
+                backoff *= 2
+                continue
+
+            if response and response.get('s') == 'ok' and response.get('d'):
+                result = {}
+                for item in response['d']:
+                    sym = item.get('n')
+                    v = item.get('v', {})
+                    if isinstance(v, dict) and sym:
+                        raw = v.get('lp') or v.get('ltp') or v.get('lt')
+                        try:
+                            result[sym] = float(raw)
+                        except (TypeError, ValueError):
+                            pass
+                return result
+
+            logging.debug(f"Unexpected batch LTP response attempt {attempt}/{max_retries}: {response}")
+            time.sleep(backoff)
+            backoff *= 2
+
+        except Exception as e:
+            logging.error(f"Error in batch LTP attempt {attempt}/{max_retries}: {e}")
+            time.sleep(backoff)
+            backoff *= 2
+
+    logging.warning(f"Exhausted batch LTP retries for {symbols_str}. Returning empty dict.")
+    return {}
+
 class WebSocketManager:
     """Manage WebSocket connections for real-time data"""
     
