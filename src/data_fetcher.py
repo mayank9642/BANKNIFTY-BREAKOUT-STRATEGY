@@ -1,6 +1,7 @@
 """
 Enhanced data fetcher with caching and reliability improvements
 """
+import concurrent.futures
 import logging
 import time
 import pytz
@@ -13,6 +14,17 @@ from .symbol_formatter import generate_option_symbol
 
 # Add parent directory to path to import symbol_formatter
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+_QUOTES_TIMEOUT = 8  # seconds — max wait for any quotes() call
+
+def _quotes_with_timeout(fyers_client, data, timeout=_QUOTES_TIMEOUT):
+    """Call fyers_client.quotes() with a hard timeout to prevent indefinite hang."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fyers_client.quotes, data)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"fyers_client.quotes() hung for >{timeout}s — no response from API")
 from symbol_formatter import convert_option_symbol_format, apply_symbol_formatting
 
 class DataFetcher:
@@ -144,7 +156,7 @@ class DataFetcher:
 
         for attempt in range(1, max_retries + 1):
             try:
-                response = self.fyers.quotes(data={"symbols": symbol})
+                response = _quotes_with_timeout(self.fyers, {"symbols": symbol})
 
                 if isinstance(response, dict) and response.get('s') == 'error':
                     code = response.get('code')
@@ -198,7 +210,7 @@ class DataFetcher:
         backoff = 0.5
         for attempt in range(1, max_retries + 1):
             try:
-                response = self.fyers.quotes(data={"symbols": symbols_str})
+                response = _quotes_with_timeout(self.fyers, {"symbols": symbols_str})
                 if isinstance(response, dict) and response.get('s') == 'error':
                     code = response.get('code')
                     if code == 429:

@@ -1,6 +1,7 @@
 """
 Fyers API utilities for market data and trading
 """
+import concurrent.futures
 import logging
 import threading
 import time
@@ -8,6 +9,17 @@ from fyers_apiv3 import fyersModel
 from fyers_apiv3.FyersWebsocket import data_ws
 from src.config import load_config
 from src.token_helper import ensure_valid_token
+
+_QUOTES_TIMEOUT = 8  # seconds — max wait for any fyers_client.quotes() call
+
+def _quotes_with_timeout(fyers_client, data, timeout=_QUOTES_TIMEOUT):
+    """Call fyers_client.quotes() with a hard timeout to prevent indefinite hang."""
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(fyers_client.quotes, data)
+        try:
+            return future.result(timeout=timeout)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"fyers_client.quotes() hung for >{timeout}s — no response from API")
 
 def get_fyers_client():
     """Get authenticated Fyers client"""
@@ -49,7 +61,7 @@ def get_ltp(fyers_client, symbol):
     backoff = 0.5
     for attempt in range(1, max_retries + 1):
         try:
-            response = fyers_client.quotes(data={"symbols": symbol})
+            response = _quotes_with_timeout(fyers_client, {"symbols": symbol})
 
             # If the API returns a structured error, inspect and handle 429 specifically
             if isinstance(response, dict) and response.get('s') == 'error':
@@ -111,7 +123,7 @@ def get_ltp_batch(fyers_client, symbols):
     backoff = 0.5
     for attempt in range(1, max_retries + 1):
         try:
-            response = fyers_client.quotes(data={"symbols": symbols_str})
+            response = _quotes_with_timeout(fyers_client, {"symbols": symbols_str})
 
             if isinstance(response, dict) and response.get('s') == 'error':
                 code = response.get('code')
