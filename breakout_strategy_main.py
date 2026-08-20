@@ -112,7 +112,7 @@ class Breakout5MinStrategy:
     def monitor_filled_paper_order(self, order_id):
         """Monitor paper trade using live prices (get_ltp) after breakout: logs entry, LTP, SL, target, P&L, max up/down, trailing SL, and final exit/performance logs."""
         import time
-        from datetime import datetime
+        from datetime import datetime, time as dtime
         order = self.paper_orders.get(order_id, {})
         symbol = order.get('symbol', 'UNKNOWN')
         entry_price = order.get('entry_limit', 0)
@@ -135,15 +135,51 @@ class Breakout5MinStrategy:
         max_up_pnl = float('-inf')
         max_down_pnl = float('inf')
         exit_price = None
+        exit_reason = None
         trade_active = True
-        filled_time = datetime.now(self.ist).strftime('%H:%M:%S')
+        filled_dt = datetime.now(self.ist)
+        filled_time = filled_dt.strftime('%H:%M:%S')
         order['filled_time'] = filled_time
+        poll_interval_sec = 2
+        market_close_time = dtime(15, 30)
+        max_monitor_minutes = self.config.get('strategy', {}).get('paper_monitor_max_minutes', 120)
+        max_invalid_ltp_streak = self.config.get('strategy', {}).get('max_invalid_ltp_streak', 20)
+        invalid_ltp_streak = 0
+
         while trade_active:
-            ltp = self.get_ltp(symbol)
+            now_dt = datetime.now(self.ist)
+            if now_dt.time() >= market_close_time:
+                self.log_info(f"[PAPER EXIT] Market close reached for {symbol}. Exiting monitor loop.")
+                exit_price = entry_price if exit_price is None else exit_price
+                exit_reason = 'MARKET_CLOSE'
+                break
+
+            elapsed_min = (now_dt - filled_dt).total_seconds() / 60.0
+            if elapsed_min >= max_monitor_minutes:
+                self.log_info(f"[PAPER EXIT] Max monitor time reached ({max_monitor_minutes} min) for {symbol}. Exiting monitor loop.")
+                exit_price = entry_price if exit_price is None else exit_price
+                exit_reason = 'TIME_EXIT'
+                break
+
+            raw_ltp = self.get_ltp(symbol)
             try:
-                ltp = float(ltp)
+                ltp = float(raw_ltp)
+                if ltp <= 0:
+                    raise ValueError("Non-positive LTP")
+                invalid_ltp_streak = 0
             except Exception:
-                ltp = entry_price
+                invalid_ltp_streak += 1
+                self.log_info(
+                    f"[WARN] Invalid LTP for {symbol} (streak {invalid_ltp_streak}/{max_invalid_ltp_streak}). "
+                    f"Raw={raw_ltp}. Retrying..."
+                )
+                if invalid_ltp_streak >= max_invalid_ltp_streak:
+                    self.log_info(f"[PAPER EXIT] Too many invalid LTP reads for {symbol}. Exiting monitor loop.")
+                    exit_price = entry_price
+                    exit_reason = 'DATA_EXIT'
+                    break
+                time.sleep(poll_interval_sec)
+                continue
             pnl = (ltp - entry_price) * qty
             max_up_pnl = max(max_up_pnl, pnl)
             max_down_pnl = min(max_down_pnl, pnl)
@@ -162,7 +198,12 @@ class Breakout5MinStrategy:
                 exit_price = ltp
                 trade_active = False
                 exit_reason = 'TARGET'
-            time.sleep(0.5)  # 1 call/0.5s = 120/min (60% of 200/min Fyers limit)
+            time.sleep(poll_interval_sec)  # Poll every 2 seconds (30 calls/min) — Fyers limit: 200/min
+
+        if exit_price is None:
+            exit_price = entry_price
+        if not exit_reason:
+            exit_reason = 'TIME_EXIT'
         # Update order with exit details
         order['exit_price'] = exit_price
         order['max_up_pnl'] = max_up_pnl
@@ -452,22 +493,36 @@ class Breakout5MinStrategy:
 
         self.wait_until_920()
 
-        # ── VIX RED ZONE FILTER ──────────────────────────────────────────────
-        # Based on historical analysis of 61 real trades parsed from strategy
-        # log files (real tick data, not synthetic):
+        # ── VIX FILTER ───────────────────────────────────────────────────────
+        # Based on historical analysis of real forward-testing trades:
         #
-        #   VIX 15–17 → 12 trades | 58% win | Cumul P&L: +₹3,605  ✅ TRADE
-        #   VIX 17–19 → 21 trades | 43% win | Cumul P&L: -₹5,829  ❌ AVOID
-        #   VIX 21–24 →  6 trades | 67% win | Cumul P&L: +₹6,974  ✅ TRADE
-        #   VIX > 24  →  9 trades | 67% win | Cumul P&L: +₹6,712  ✅ TRADE
+        #   VIX < 12  →  2 trades |  0% win | Net P&L: -2,788  ❌ AVOID (new)
+        #   VIX 12–15 → sweet spot | 75–88% win rate           ✅ TRADE
+        #   VIX 15–17 → 12 trades | 58% win | Cumul P&L: +3,605 ✅ TRADE
+        #   VIX 17–19 → 21 trades | 43% win | Cumul P&L: -5,829 ❌ AVOID
+        #   VIX 21–24 →  6 trades | 67% win | Cumul P&L: +6,974 ✅ TRADE
+        #   VIX > 24  →  9 trades | 67% win | Cumul P&L: +6,712 ✅ TRADE
         #
-        # The 17–19 zone is the "chop zone": VIX high enough to inflate premiums
-        # but not volatile enough for a clean 7% directional move to target.
-        # Skipping it alone adds +₹5,829 (+30%) to total historical P&L.
+        # LOW VIX (<12): market too calm, options don't move enough to hit
+        # target but SL still gets clipped. 0% win rate in forward testing.
+        # HIGH VIX 17-19: chop zone, premiums inflated but no clean direction.
         # ─────────────────────────────────────────────────────────────────────
         _vix_now = self.get_current_vix()
         if _vix_now is not None:
-            if 17.0 <= _vix_now < 19.0:
+            if _vix_now < 12.0:
+                self.log_info(
+                    f'[VIX TOO LOW] India VIX = {_vix_now:.2f} (below 12.0). '
+                    f'Forward test: 0% win rate below VIX 12. '
+                    f'Market too calm for breakout strategy. Skipping trade today.'
+                )
+                print('\033[93m' + '=' * 70 + '\033[0m')
+                print('\033[93m' + '  [VIX TOO LOW]   India VIX = {:.2f}'.format(_vix_now) + '\033[0m')
+                print('\033[93m' + '  VIX below 12.0 -- market too calm for breakout              ' + '\033[0m')
+                print('\033[93m' + '  Forward test: 0% win rate | 2/2 losses below this level     ' + '\033[0m')
+                print('\033[93m' + '  NO TRADE TODAY -- Strategy exiting cleanly.                 ' + '\033[0m')
+                print('\033[93m' + '=' * 70 + '\033[0m')
+                return
+            elif 17.0 <= _vix_now < 19.0:
                 self.log_info(
                     f'[VIX RED ZONE] India VIX = {_vix_now:.2f} (Range 17.0-19.0 detected). '
                     f'Historical record: 21 trades, 43% win rate, Cumul P&L -5829. '
@@ -481,7 +536,7 @@ class Breakout5MinStrategy:
                 print('\033[91m' + '=' * 70 + '\033[0m')
                 return
         else:
-            self.log_info('[VIX] Could not fetch VIX for red-zone check -- proceeding with trade.')
+            self.log_info('[VIX] Could not fetch VIX for filter check -- proceeding with trade.')
 
         t = threading.Thread(target=self.monitor_index, args=(self.banknifty_symbol, self.banknifty_qty, 'BANKNIFTY'), daemon=True)
         t.start()
@@ -835,7 +890,7 @@ class Breakout5MinStrategy:
                 # Optional: Fetch and log current LTP for monitoring (informational only)
                 if ce_ltp and pe_ltp:
                     self.log_info(f"Current Prices: CE LTP: {ce_ltp:.2f} | PE LTP: {pe_ltp:.2f}")
-                time.sleep(0.5)  # 1 batch call/0.5s = 120/min (60% of 200/min Fyers limit)
+                time.sleep(2)  # Poll every 2s (60 calls/min for CE+PE) — Fyers limit: 200/min
         if not oco_entry_taken:
             self.log_info(f"No entry taken within monitoring window.")
         
@@ -1187,7 +1242,7 @@ class Breakout5MinStrategy:
                     if int(time.time()) % 30 == 0:
                         if ltp is not None:
                             self.log_info(f"Monitoring: {opt_type} {ltp:.2f} | Need: {breakout_level:.2f} | Gap: {(breakout_level - ltp):.2f}")
-            time.sleep(0.5)  # Faster polling for better SL/Target execution
+            time.sleep(2)  # Poll every 2s (30 calls/min)  Fyers limit: 200/min
         if not breakout_taken:
             self.log_info(f"No breakout detected for {symbol} within monitoring window.")
 
@@ -1245,7 +1300,7 @@ class Breakout5MinStrategy:
                 if new_trailing > trailing_sl:
                     self.log_info(f"Trailing SL moved up to {new_trailing}")
                     trailing_sl = new_trailing
-            time.sleep(0.2)  # Ultra-fast 200ms polling for SL/Target execution
+            time.sleep(2)  # Poll every 2s (30 calls/min)  Fyers limit: 200/min
         else:
             exit_reason = 'TIME_EXIT'
             exit_price = ltp
@@ -1742,7 +1797,7 @@ if __name__ == '__main__':
                     if int(time.time()) % 30 == 0:
                         if ltp is not None:
                             self.log_info(f"Monitoring: {opt_type} {ltp:.2f} | Need: {breakout_level:.2f} | Gap: {(breakout_level - ltp):.2f}")
-            time.sleep(0.5)  # Faster polling for better SL/Target execution
+            time.sleep(2)  # Poll every 2s (30 calls/min)  Fyers limit: 200/min
         if not breakout_taken:
             self.log_info(f"No breakout detected for {symbol} within monitoring window.")
 
@@ -1800,7 +1855,7 @@ if __name__ == '__main__':
                 if new_trailing > trailing_sl:
                     self.log_info(f"Trailing SL moved up to {new_trailing}")
                     trailing_sl = new_trailing
-            time.sleep(0.2)  # Ultra-fast 200ms polling for SL/Target execution
+            time.sleep(2)  # Poll every 2s (30 calls/min)  Fyers limit: 200/min
         else:
             exit_reason = 'TIME_EXIT'
             exit_price = ltp

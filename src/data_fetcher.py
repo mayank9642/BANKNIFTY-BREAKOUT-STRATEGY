@@ -82,9 +82,27 @@ class DataFetcher:
             response = self.fyers.history(data=data_request)
             
             if response.get('s') == 'ok' and response.get('candles'):
+                candles = response.get('candles', [])
+                # Fyers can return 6 fields (no OI) or 7+ fields (with OI/extra values).
+                # We only need OHLCV (+ optional OI), so normalize variable-length rows safely.
+                normalized = []
+                for row in candles:
+                    if not isinstance(row, (list, tuple)) or len(row) < 6:
+                        continue
+                    # Keep first 7 fields at most: ts, o, h, l, c, v, (optional) oi
+                    trimmed = list(row[:7])
+                    # Pad to 7 for stable DataFrame creation
+                    if len(trimmed) == 6:
+                        trimmed.append(None)
+                    normalized.append(trimmed)
+
+                if not normalized:
+                    self.logger.error(f"Historical response for {symbol} had no valid candle rows: {response}")
+                    return None
+
                 df = pd.DataFrame(
-                    response['candles'],
-                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume']
+                    normalized,
+                    columns=['timestamp', 'open', 'high', 'low', 'close', 'volume', 'oi']
                 )
                 df['timestamp'] = pd.to_datetime(df['timestamp'], unit='s', utc=True)
                 df['timestamp'] = df['timestamp'].dt.tz_convert(self.ist_tz)
